@@ -15,8 +15,14 @@
 	import { add, neg } from '#lib/decimal.js';
 	import { isNegative, money, price, quantity } from '#lib/format.js';
 	import { ASSET_CLASS_LABEL, instrumentLabel, type Kind } from '#lib/transactions.svelte.js';
-	import { UNVALUED_LABEL, valuation, type ValuedPosition } from '#lib/valuation.svelte.js';
+	import {
+		UNVALUED_LABEL,
+		emptyValuation,
+		fetchValuation,
+		type ValuedPosition
+	} from '#lib/valuation.svelte.js';
 	import { currentPortfolio } from '#lib/portfolio.svelte.js';
+	import { live } from '#lib/live.svelte.js';
 
 	type Mode = 'holding' | 'base';
 
@@ -27,8 +33,9 @@
 	let dialogOpen = $state(false);
 	let preset = $state<{ kind: Kind; instrumentId?: string } | null>(null);
 
-	const v = $derived(valuation(asOf));
 	const base = $derived(currentPortfolio().baseCurrency);
+	const valuation = live(() => fetchValuation(currentPortfolio().id, asOf));
+	const v = $derived(valuation.value ?? emptyValuation(base, asOf));
 
 	const rows = $derived.by(() => {
 		const needle = search.trim().toLowerCase();
@@ -197,7 +204,13 @@
 					{:else}
 						<Table.Row>
 							<Table.Cell colspan={7} class="h-24 text-center text-muted-foreground">
-								No holdings yet. Add a buy or an opening position.
+								{#if valuation.error}
+									<span class="text-destructive">{valuation.error}</span>
+								{:else if !valuation.value}
+									Loading…
+								{:else}
+									No holdings yet. Add a buy or an opening position.
+								{/if}
 							</Table.Cell>
 						</Table.Row>
 					{/each}

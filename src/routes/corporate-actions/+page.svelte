@@ -12,8 +12,11 @@
 	import Trash2 from '@lucide/svelte/icons/trash-2';
 	import { DECIMAL_INPUT, isZero } from '#lib/decimal.js';
 	import { money, quantity } from '#lib/format.js';
+	import { currentPortfolio } from '#lib/portfolio.svelte.js';
+	import { toastError } from '#lib/notify.js';
 	import {
 		CORPORATE_KINDS,
+		EMPTY_FIELDS,
 		KIND_LABEL,
 		createTransaction,
 		deleteTransactions,
@@ -96,7 +99,9 @@
 		open = true;
 	}
 
-	function save(event: SubmitEvent) {
+	let busy = $state(false);
+
+	async function save(event: SubmitEvent) {
 		event.preventDefault();
 		const e: Record<string, string> = {};
 		const positive = (key: keyof typeof form, label: string) => {
@@ -122,6 +127,7 @@
 		if (Object.keys(e).length) return;
 
 		const input = {
+			...EMPTY_FIELDS,
 			kind: form.kind,
 			tradeDate: form.tradeDate,
 			instrumentId: form.instrumentId,
@@ -136,14 +142,35 @@
 			cashInLieuQuantity: inLieu ? form.cashInLieuQuantity.trim() : null,
 			note: form.note.trim() || null
 		};
-		if (editing) {
-			updateTransaction(editing.id, input);
-			toast.success('Corporate action updated');
-		} else {
-			createTransaction(input);
-			toast.success(`${describe(input)} added`);
+		busy = true;
+		try {
+			if (editing) {
+				await updateTransaction(editing, input);
+				toast.success('Corporate action updated');
+			} else {
+				await createTransaction(currentPortfolio().id, input);
+				toast.success(`${describe(input)} added`);
+			}
+			open = false;
+		} catch (err) {
+			toastError(err);
+		} finally {
+			busy = false;
 		}
-		open = false;
+	}
+
+	async function confirmDelete() {
+		if (!pendingDelete) return;
+		busy = true;
+		try {
+			await deleteTransactions([pendingDelete]);
+			toast.success('Corporate action deleted');
+		} catch (err) {
+			toastError(err);
+		} finally {
+			pendingDelete = null;
+			busy = false;
+		}
 	}
 </script>
 
@@ -312,7 +339,7 @@
 
 			<Dialog.Footer>
 				<Button type="button" variant="ghost" onclick={() => (open = false)}>Cancel</Button>
-				<Button type="submit">Save</Button>
+				<Button type="submit" disabled={busy}>Save</Button>
 			</Dialog.Footer>
 		</form>
 	</Dialog.Content>
@@ -335,16 +362,7 @@
 			</Dialog.Header>
 			<Dialog.Footer>
 				<Button variant="ghost" onclick={() => (pendingDelete = null)}>Cancel</Button>
-				<Button
-					variant="destructive"
-					onclick={() => {
-						if (pendingDelete) deleteTransactions([pendingDelete.id]);
-						toast.success('Corporate action deleted');
-						pendingDelete = null;
-					}}
-				>
-					Yes, delete
-				</Button>
+				<Button variant="destructive" disabled={busy} onclick={confirmDelete}>Yes, delete</Button>
 			</Dialog.Footer>
 		{/if}
 	</Dialog.Content>

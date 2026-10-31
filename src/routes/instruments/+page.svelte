@@ -14,13 +14,13 @@
 	import Search from '@lucide/svelte/icons/search';
 	import Ellipsis from '@lucide/svelte/icons/ellipsis';
 	import { price as formatPrice } from '#lib/format.js';
-	import { latestPrice } from '#lib/market-data.svelte.js';
+	import { latestPrice, loadMarketData } from '#lib/market-data.svelte.js';
+	import { toastError } from '#lib/notify.js';
 	import { CURRENCY_CODE } from '#lib/portfolio.svelte.js';
 	import {
 		ASSET_CLASS_LABEL,
 		createInstrument,
 		deleteInstrument,
-		instrumentInUse,
 		instruments,
 		updateInstrument,
 		type AssetClass,
@@ -35,6 +35,10 @@
 	let form = $state(blank());
 	let errors = $state<Record<string, string>>({});
 	let pendingDelete = $state<Instrument | null>(null);
+	let busy = $state(false);
+
+	// Only for the latest-price column; the table works without it.
+	loadMarketData().catch(toastError);
 
 	function blank() {
 		return {
@@ -72,7 +76,7 @@
 		open = true;
 	}
 
-	function save(event: SubmitEvent) {
+	async function save(event: SubmitEvent) {
 		event.preventDefault();
 		const e: Record<string, string> = {};
 		const opt = (s: string) => (s.trim() === '' ? null : s.trim());
@@ -89,14 +93,35 @@
 			isin: opt(form.isin),
 			exchange: opt(form.exchange)
 		};
-		if (editing) {
-			updateInstrument(editing.id, fields);
-			toast.success('Instrument updated');
-		} else {
-			createInstrument({ ...fields, quoteCurrency });
-			toast.success(`${fields.symbol ?? fields.name} added`);
+		busy = true;
+		try {
+			if (editing) {
+				await updateInstrument(editing.id, fields);
+				toast.success('Instrument updated');
+			} else {
+				await createInstrument({ ...fields, quoteCurrency });
+				toast.success(`${fields.symbol ?? fields.name} added`);
+			}
+			open = false;
+		} catch (err) {
+			toastError(err);
+		} finally {
+			busy = false;
 		}
-		open = false;
+	}
+
+	async function confirmDelete() {
+		if (!pendingDelete) return;
+		busy = true;
+		try {
+			await deleteInstrument(pendingDelete.id);
+			toast.success('Instrument deleted');
+			pendingDelete = null;
+		} catch (err) {
+			toastError(err);
+		} finally {
+			busy = false;
+		}
 	}
 </script>
 
@@ -171,12 +196,8 @@
 											{/snippet}
 										</DropdownMenu.Item>
 										<DropdownMenu.Separator />
-										<DropdownMenu.Item
-											variant="destructive"
-											disabled={instrumentInUse(i.id)}
-											onclick={() => (pendingDelete = i)}
-										>
-											{instrumentInUse(i.id) ? 'Delete (has transactions)' : 'Delete'}
+										<DropdownMenu.Item variant="destructive" onclick={() => (pendingDelete = i)}>
+											Delete
 										</DropdownMenu.Item>
 									</DropdownMenu.Content>
 								</DropdownMenu.Root>
@@ -252,7 +273,7 @@
 			</div>
 			<Dialog.Footer>
 				<Button type="button" variant="ghost" onclick={() => (open = false)}>Cancel</Button>
-				<Button type="submit">Save</Button>
+				<Button type="submit" disabled={busy}>Save</Button>
 			</Dialog.Footer>
 		</form>
 	</Dialog.Content>
@@ -267,22 +288,13 @@
 	<Dialog.Content class="sm:max-w-md">
 		<Dialog.Header>
 			<Dialog.Title>Delete "{pendingDelete?.name}"</Dialog.Title>
-			<Dialog.Description
-				>The instrument has no transactions. This cannot be undone.</Dialog.Description
-			>
+			<Dialog.Description>
+				Only an instrument with no transactions and no prices can be deleted. This cannot be undone.
+			</Dialog.Description>
 		</Dialog.Header>
 		<Dialog.Footer>
 			<Button variant="ghost" onclick={() => (pendingDelete = null)}>Cancel</Button>
-			<Button
-				variant="destructive"
-				onclick={() => {
-					if (pendingDelete) deleteInstrument(pendingDelete.id);
-					toast.success('Instrument deleted');
-					pendingDelete = null;
-				}}
-			>
-				Yes, delete
-			</Button>
+			<Button variant="destructive" disabled={busy} onclick={confirmDelete}>Yes, delete</Button>
 		</Dialog.Footer>
 	</Dialog.Content>
 </Dialog.Root>

@@ -19,14 +19,22 @@
 		instrumentLabel,
 		portfolioTransactions
 	} from '#lib/transactions.svelte.js';
-	import { UNVALUED_LABEL, allocation, valuation } from '#lib/valuation.svelte.js';
+	import { live } from '#lib/live.svelte.js';
+	import {
+		UNVALUED_LABEL,
+		emptyValuation,
+		fetchAllocation,
+		fetchValuation
+	} from '#lib/valuation.svelte.js';
 
 	let asOf = $state(new Date().toISOString().slice(0, 10));
 
 	const portfolio = $derived(currentPortfolio());
 	const base = $derived(portfolio.baseCurrency);
-	const v = $derived(valuation(asOf));
-	const shares = $derived(allocation(v));
+	const valuation = live(() => fetchValuation(portfolio.id, asOf));
+	const allocation = live(() => fetchAllocation(portfolio.id, asOf));
+	const v = $derived(valuation.value ?? emptyValuation(base, asOf));
+	const shares = $derived(allocation.value?.classes ?? []);
 
 	// Income received over the 12 months up to as_of, gross, per currency.
 	const months = $derived.by(() => {
@@ -150,7 +158,13 @@
 		<div>
 			<h1 class="text-2xl font-semibold tracking-tight">{portfolio.name}</h1>
 			<p class="text-sm text-muted-foreground">
-				Valued in {base}{v.partial ? ' · partial' : ''}
+				{#if valuation.error}
+					<span class="text-destructive">{valuation.error}</span>
+				{:else if !valuation.value}
+					Loading valuation…
+				{:else}
+					Valued in {base}{v.partial ? ' · partial' : ''}
+				{/if}
 			</p>
 		</div>
 		<label class="flex items-center gap-2 text-sm text-muted-foreground">

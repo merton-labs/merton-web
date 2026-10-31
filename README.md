@@ -4,8 +4,8 @@ SvelteKit frontend for [Merton Labs](https://github.com/merton-labs), a self-hos
 multi-user investment portfolio tracker. The REST backend is
 [merton-api](https://github.com/merton-labs/merton-api).
 
-> **Status:** prototype. Screens use in-memory mock stores in `src/lib/*.svelte.ts`
-> (a reload resets them); nothing calls the API yet.
+> **Status:** prototype. Every screen reads and writes merton-api; CSV import
+> and export are not built yet.
 
 ## Stack
 
@@ -22,8 +22,33 @@ pnpm dev            # http://localhost:5173
 ```
 
 The dev server proxies `/api` to `http://127.0.0.1:8080`, so run merton-api
-alongside it. In production the app and the API are served from the same
-origin behind a reverse proxy (no CORS).
+alongside it. The browser sends `Origin: http://localhost:5173`, so the API must
+trust that origin, for example `APP_TRUSTED_ORIGINS=http://localhost:5173` for
+`cargo run`, or `APP_TRUSTED_ORIGINS=http://localhost:8080,http://localhost:5173`
+in `.env` when the Compose stack serves the API. In production the app and the
+API are served from the same origin behind a reverse proxy (no CORS).
+
+## Data flow
+
+Stores in `src/lib/*.svelte.ts` hold what the API returned, in camelCase:
+portfolios and instruments load after sign-in (`workspace.svelte.ts`), then
+the selected portfolio's cash accounts and transactions. A write sends the
+request and stores the API's answer; the API's 409 or 422 problem is shown as
+a toast. Holdings, valuation, allocation and cash balances always come from
+the server (`valuation.svelte.ts`, refetched through `live.svelte.ts` after any
+write). Everything is cleared on sign-out.
+
+## Authentication
+
+Pages render in the browser only (`ssr = false` in `src/routes/+layout.ts`):
+the session is an HttpOnly cookie that only the API can read, and there is no
+BFF. On load the layout asks `GET /api/v1/auth/me`; without a session every
+page except `/login` and `/register` redirects to `/login`.
+
+`src/lib/api.ts` is the API client. It sends the session-bound
+`X-CSRF-Token` on every mutation (fetched from `/auth/csrf` and cached until
+login or logout), turns Problem Details into `ApiError`, and reports a lost
+session so the app returns to the sign-in page.
 
 ## Running with Docker Compose
 

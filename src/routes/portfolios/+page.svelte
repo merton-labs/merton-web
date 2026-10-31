@@ -15,18 +15,21 @@
 		createPortfolio,
 		deletePortfolio,
 		portfolios,
+		selectPortfolio,
 		session,
 		setStatus,
 		updatePortfolio,
-		type Portfolio
+		type Portfolio,
+		type PortfolioStatus
 	} from '#lib/portfolio.svelte.js';
-	import { portfolioHasHistory } from '#lib/transactions.svelte.js';
+	import { toastError } from '#lib/notify.js';
 
 	let open = $state(false);
 	let editing = $state<Portfolio | null>(null);
 	let form = $state({ name: '', baseCurrency: 'THB' });
 	let errors = $state<Record<string, string>>({});
 	let pendingDelete = $state<Portfolio | null>(null);
+	let busy = $state(false);
 
 	function openEdit(p: Portfolio | null) {
 		editing = p;
@@ -35,7 +38,7 @@
 		open = true;
 	}
 
-	function save(event: SubmitEvent) {
+	async function save(event: SubmitEvent) {
 		event.preventDefault();
 		const e: Record<string, string> = {};
 		const name = form.name.trim();
@@ -45,15 +48,44 @@
 		if (!CURRENCY_CODE.test(baseCurrency)) e.baseCurrency = 'Use a 3-letter code such as THB';
 		errors = e;
 		if (Object.keys(e).length) return;
-		if (editing) {
-			updatePortfolio(editing.id, name, baseCurrency);
-			toast.success('Portfolio updated');
-		} else {
-			const created = createPortfolio(name, baseCurrency);
-			session.portfolioId = created.id;
-			toast.success(`${name} created`);
+		busy = true;
+		try {
+			if (editing) {
+				await updatePortfolio(editing.id, name, baseCurrency);
+				toast.success('Portfolio updated');
+			} else {
+				await createPortfolio(name, baseCurrency);
+				toast.success(`${name} created`);
+			}
+			open = false;
+		} catch (err) {
+			toastError(err);
+		} finally {
+			busy = false;
 		}
-		open = false;
+	}
+
+	async function changeStatus(p: Portfolio, status: PortfolioStatus) {
+		try {
+			await setStatus(p.id, status);
+			toast.success(`${p.name} ${status === 'ARCHIVED' ? 'archived' : 'restored'}`);
+		} catch (err) {
+			toastError(err);
+		}
+	}
+
+	async function confirmDelete() {
+		if (!pendingDelete) return;
+		busy = true;
+		try {
+			await deletePortfolio(pendingDelete.id);
+			toast.success('Portfolio deleted');
+			pendingDelete = null;
+		} catch (err) {
+			toastError(err);
+		} finally {
+			busy = false;
+		}
 	}
 </script>
 
@@ -83,7 +115,6 @@
 				</Table.Header>
 				<Table.Body>
 					{#each portfolios as p (p.id)}
-						{@const history = portfolioHasHistory(p.id)}
 						<Table.Row data-state={p.id === session.portfolioId ? 'selected' : undefined}>
 							<Table.Cell class="font-medium">
 								{p.name}
@@ -104,7 +135,7 @@
 										variant="outline"
 										size="sm"
 										disabled={p.id === session.portfolioId}
-										onclick={() => (session.portfolioId = p.id)}
+										onclick={() => selectPortfolio(p.id)}
 									>
 										Open
 									</Button>
@@ -124,31 +155,17 @@
 												Edit
 											</DropdownMenu.Item>
 											{#if p.status === 'ACTIVE'}
-												<DropdownMenu.Item
-													onclick={() => {
-														setStatus(p.id, 'ARCHIVED');
-														toast.success(`${p.name} archived`);
-													}}
-												>
+												<DropdownMenu.Item onclick={() => changeStatus(p, 'ARCHIVED')}>
 													Archive
 												</DropdownMenu.Item>
 											{:else}
-												<DropdownMenu.Item
-													onclick={() => {
-														setStatus(p.id, 'ACTIVE');
-														toast.success(`${p.name} restored`);
-													}}
-												>
+												<DropdownMenu.Item onclick={() => changeStatus(p, 'ACTIVE')}>
 													Restore
 												</DropdownMenu.Item>
 											{/if}
 											<DropdownMenu.Separator />
-											<DropdownMenu.Item
-												variant="destructive"
-												disabled={history}
-												onclick={() => (pendingDelete = p)}
-											>
-												{history ? 'Delete (has transactions — archive instead)' : 'Delete'}
+											<DropdownMenu.Item variant="destructive" onclick={() => (pendingDelete = p)}>
+												Delete
 											</DropdownMenu.Item>
 										</DropdownMenu.Content>
 									</DropdownMenu.Root>
@@ -192,7 +209,7 @@
 			</div>
 			<Dialog.Footer>
 				<Button type="button" variant="ghost" onclick={() => (open = false)}>Cancel</Button>
-				<Button type="submit">Save</Button>
+				<Button type="submit" disabled={busy}>Save</Button>
 			</Dialog.Footer>
 		</form>
 	</Dialog.Content>
@@ -208,21 +225,13 @@
 		<Dialog.Header>
 			<Dialog.Title>Delete "{pendingDelete?.name}"</Dialog.Title>
 			<Dialog.Description>
-				The portfolio has no transactions. Its unused cash accounts are deleted with it.
+				Only a portfolio without transactions can be deleted; archive it otherwise. Its unused cash
+				accounts are deleted with it.
 			</Dialog.Description>
 		</Dialog.Header>
 		<Dialog.Footer>
 			<Button variant="ghost" onclick={() => (pendingDelete = null)}>Cancel</Button>
-			<Button
-				variant="destructive"
-				onclick={() => {
-					if (pendingDelete) deletePortfolio(pendingDelete.id);
-					toast.success('Portfolio deleted');
-					pendingDelete = null;
-				}}
-			>
-				Yes, delete
-			</Button>
+			<Button variant="destructive" disabled={busy} onclick={confirmDelete}>Yes, delete</Button>
 		</Dialog.Footer>
 	</Dialog.Content>
 </Dialog.Root>
