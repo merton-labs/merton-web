@@ -164,6 +164,16 @@
 											{/snippet}
 										</DropdownMenu.Trigger>
 										<DropdownMenu.Content align="end">
+											<DropdownMenu.Item onclick={() => openTx('OPENING_CASH', c.account.id)}>
+												Set opening balance
+											</DropdownMenu.Item>
+											<DropdownMenu.Item onclick={() => openTx('CASH_TRANSFER', c.account.id)}>
+												Transfer to another account
+											</DropdownMenu.Item>
+											<DropdownMenu.Item onclick={() => openTx('FX_EXCHANGE', c.account.id)}>
+												Convert currency
+											</DropdownMenu.Item>
+											<DropdownMenu.Separator />
 											<DropdownMenu.Item onclick={() => openEdit(c.account)}
 												>Rename</DropdownMenu.Item
 											>

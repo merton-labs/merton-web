@@ -3,10 +3,14 @@
 
 type Decimal = `${number}`;
 
+/** Currency style when the code is known; a plain number otherwise, so a gap never throws. */
+function currencyStyle(currency: string): Intl.NumberFormatOptions {
+	return /^[A-Z]{3}$/.test(currency) ? { style: 'currency', currency } : {};
+}
+
 export function money(value: string, currency: string): string {
 	return new Intl.NumberFormat('en-US', {
-		style: 'currency',
-		currency,
+		...currencyStyle(currency),
 		minimumFractionDigits: 2,
 		maximumFractionDigits: 2
 	}).format(value as Decimal);
@@ -15,8 +19,7 @@ export function money(value: string, currency: string): string {
 // Unit prices (fund NAVs especially) carry more than two decimals; never round them away.
 export function price(value: string, currency: string): string {
 	return new Intl.NumberFormat('en-US', {
-		style: 'currency',
-		currency,
+		...currencyStyle(currency),
 		minimumFractionDigits: 2,
 		maximumFractionDigits: 8
 	}).format(value as Decimal);

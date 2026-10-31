@@ -11,9 +11,10 @@
 	import { Input } from '#lib/components/ui/input/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
 	import { Textarea } from '#lib/components/ui/textarea/index.js';
+	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
 	import ChevronsUpDown from '@lucide/svelte/icons/chevrons-up-down';
 	import Check from '@lucide/svelte/icons/check';
-	import { DECIMAL_INPUT, isZero } from '#lib/decimal.js';
+	import { DECIMAL_INPUT, SIGNED_DECIMAL_INPUT, isZero } from '#lib/decimal.js';
 	import { money } from '#lib/format.js';
 	import { currentPortfolio } from '#lib/portfolio.svelte.js';
 	import { toastError } from '#lib/notify.js';
@@ -23,6 +24,7 @@
 		INCOME_KINDS,
 		KIND_LABEL,
 		TRADE_KINDS,
+		TRANSFER_KINDS,
 		cashAccountById,
 		portfolioCashAccounts,
 		instrumentLabel,
@@ -74,6 +76,10 @@
 			fee: '',
 			tax: '',
 			amount: '',
+			destinationCashAccountId: '',
+			destinationAmount: '',
+			/** Trades and dividends: off records it without touching cash, as Snowball does. */
+			updateCash: true,
 			note: ''
 		};
 	}
@@ -101,6 +107,9 @@
 					fee: source.fee ?? '',
 					tax: source.tax ?? '',
 					amount: source.amount ?? '',
+					destinationCashAccountId: source.destinationCashAccountId ?? '',
+					destinationAmount: source.destinationAmount ?? '',
+					updateCash: source.cashAccountId !== null,
 					note: source.note ?? ''
 				};
 			} else if (start) {
@@ -126,6 +135,12 @@
 
 	const kinds = $derived(GROUPS.find((g) => g.value === group)!.kinds);
 	const needsInstrument = $derived(group === 'trades' || form.kind === 'DIVIDEND');
+	const isTransfer = $derived(TRANSFER_KINDS.includes(form.kind));
+	const isOpening = $derived(form.kind === 'OPENING_POSITION');
+	// The API makes the cash account optional for trades and dividends only.
+	const canSkipCash = $derived((group === 'trades' && !isOpening) || form.kind === 'DIVIDEND');
+	const tracksCash = $derived(!isOpening && (!canSkipCash || form.updateCash));
+	const amountInput = $derived(form.kind === 'OPENING_CASH' ? SIGNED_DECIMAL_INPUT : DECIMAL_INPUT);
 	const instrument = $derived(instrumentById(form.instrumentId || null));
 	// The cash account must be in the instrument's quote currency.
 	const accountChoices = $derived(
@@ -135,6 +150,17 @@
 	);
 	const currency = $derived(
 		instrument?.quoteCurrency ?? cashAccountById(form.cashAccountId)?.currency ?? ''
+	);
+	// A transfer stays in one currency; a conversion must change it (the API enforces both).
+	const destinationChoices = $derived(
+		portfolioCashAccounts().filter(
+			(c) =>
+				c.id !== form.cashAccountId &&
+				(!currency || (form.kind === 'FX_EXCHANGE') !== (c.currency === currency))
+		)
+	);
+	const destinationCurrency = $derived(
+		cashAccountById(form.destinationCashAccountId)?.currency ?? ''
 	);
 
 	$effect(() => {
@@ -147,34 +173,59 @@
 		});
 	});
 
+	$effect(() => {
+		const choices = destinationChoices;
+		untrack(() => {
+			if (!choices.some((c) => c.id === form.destinationCashAccountId)) {
+				form.destinationCashAccountId = choices.length === 1 ? choices[0].id : '';
+			}
+		});
+	});
+
 	const filledDecimal = (v: string) => DECIMAL_INPUT.test(v.trim());
 
 	function payload(): TransactionInput {
 		const opt = (v: string) => (v.trim() === '' ? null : v.trim());
 		const trade = group === 'trades';
-		const charged = trade || group === 'incomes';
+		const charged = (trade && !isOpening) || group === 'incomes';
 		return {
 			...EMPTY_FIELDS,
 			kind: form.kind,
 			tradeDate: form.tradeDate,
 			instrumentId: needsInstrument ? form.instrumentId : null,
-			cashAccountId: form.cashAccountId,
+			cashAccountId: tracksCash ? form.cashAccountId : null,
 			quantity: trade ? opt(form.quantity) : null,
-			price: trade ? opt(form.price) : null,
-			fee: charged ? opt(form.fee) : null,
+			price: trade && !isOpening ? opt(form.price) : null,
+			fee: charged || isTransfer ? opt(form.fee) : null,
 			tax: charged ? opt(form.tax) : null,
-			amount: trade ? null : opt(form.amount),
+			// An opening position carries its total cost in `amount`.
+			amount: trade && !isOpening ? null : opt(form.amount),
+			destinationCashAccountId: isTransfer ? form.destinationCashAccountId : null,
+			destinationAmount: form.kind === 'FX_EXCHANGE' ? opt(form.destinationAmount) : null,
 			note: opt(form.note)
 		};
 	}
 
 	const preview = $derived.by(() => {
 		const p = payload();
-		const required = group === 'trades' ? [form.quantity, form.price] : [form.amount];
-		const optional = group === 'trades' || group === 'incomes' ? [form.fee, form.tax] : [];
+		if (!tracksCash) return 'No cash effect';
+		const required = group === 'trades' ? [form.quantity, form.price] : [];
+		const optional =
+			group === 'trades' || group === 'incomes'
+				? [form.fee, form.tax]
+				: isTransfer
+					? [form.fee]
+					: [];
+		if (group !== 'trades' && !amountInput.test(form.amount.trim())) return null;
 		if (!required.every(filledDecimal)) return null;
 		if (!optional.every((v) => v.trim() === '' || filledDecimal(v))) return null;
-		return currency ? money(cashDelta(p), currency) : null;
+		if (!currency) return null;
+		const source = money(cashDelta(p), currency);
+		// The destination account is credited the amount (a transfer) or the amount received.
+		if (form.kind === 'CASH_TRANSFER') return `${source} · +${money(form.amount.trim(), currency)}`;
+		if (form.kind === 'FX_EXCHANGE' && destinationCurrency && filledDecimal(form.destinationAmount))
+			return `${source} · +${money(form.destinationAmount.trim(), destinationCurrency)}`;
+		return source;
 	});
 
 	function validate(): boolean {
@@ -192,16 +243,29 @@
 
 		if (!form.tradeDate) e.tradeDate = 'Date is required';
 		if (needsInstrument && !form.instrumentId) e.instrumentId = 'Choose an instrument';
-		if (!form.cashAccountId) e.cashAccountId = 'Choose a cash account';
+		if (tracksCash && !form.cashAccountId) e.cashAccountId = 'Choose a cash account';
 		if (group === 'trades') {
 			positive('quantity', 'Shares');
-			positive('price', 'Price');
+			if (isOpening) positive('amount', 'Total cost');
+			else positive('price', 'Price');
+		} else if (form.kind === 'OPENING_CASH') {
+			if (!SIGNED_DECIMAL_INPUT.test(form.amount.trim()))
+				e.amount = 'A decimal, negative if overdrawn; up to 15 digits and 8 decimal places';
 		} else {
 			positive('amount', group === 'incomes' ? 'Total received' : 'Amount');
 		}
-		if (group === 'trades' || group === 'incomes') {
+		if ((group === 'trades' && !isOpening) || group === 'incomes') {
 			optional('fee');
 			optional('tax');
+		}
+		if (isTransfer) {
+			if (!form.destinationCashAccountId)
+				e.destinationCashAccountId =
+					form.kind === 'FX_EXCHANGE'
+						? 'Choose an account in another currency'
+						: 'Choose another account in the same currency';
+			if (form.kind === 'FX_EXCHANGE') positive('destinationAmount', 'Amount received');
+			optional('fee');
 		}
 		if (form.note.length > 500) e.note = 'At most 500 characters';
 		errors = e;
@@ -242,8 +306,18 @@
 	{/if}
 {/snippet}
 
+{#snippet updateCashField(hint: string)}
+	<div class="space-y-1">
+		<Label class="flex items-center gap-2 font-normal">
+			<Checkbox bind:checked={form.updateCash} />
+			Update cash balance
+		</Label>
+		<p class="text-xs text-muted-foreground">{hint}</p>
+	</div>
+{/snippet}
+
 {#snippet decimalField(
-	field: 'quantity' | 'price' | 'fee' | 'tax' | 'amount',
+	field: 'quantity' | 'price' | 'fee' | 'tax' | 'amount' | 'destinationAmount',
 	label: string,
 	required: boolean,
 	suffix: string
@@ -384,7 +458,16 @@
 				</div>
 			{/if}
 
-			{#if group === 'trades'}
+			{#if isOpening}
+				<div class="grid grid-cols-2 gap-3 rounded-lg border p-3">
+					{@render decimalField('quantity', 'Shares', true, '')}
+					{@render decimalField('amount', 'Total cost', true, currency)}
+				</div>
+				<p class="-mt-2 text-xs text-muted-foreground">
+					A holding you already owned, as one FIFO lot at its total cost (fees included). Cash is
+					not touched. To keep each purchase's price, add buys with "Update cash balance" unticked.
+				</p>
+			{:else if group === 'trades'}
 				<div class="grid grid-cols-2 gap-3 rounded-lg border p-3">
 					{@render decimalField('quantity', 'Shares', true, '')}
 					{@render decimalField('price', 'Price', true, currency)}
@@ -393,35 +476,104 @@
 					{@render decimalField('fee', 'Fee', false, currency)}
 					{@render decimalField('tax', 'Tax', false, currency)}
 				</div>
+				{@render updateCashField(
+					'Untick for holdings you already owned or moved from another broker: the trade sets shares and cost basis but leaves cash alone.'
+				)}
 			{:else if group === 'incomes'}
 				{@render decimalField('amount', 'Total received', true, currency)}
 				<div class="grid grid-cols-2 gap-3">
 					{@render decimalField('fee', 'Fee', false, currency)}
 					{@render decimalField('tax', 'Tax withheld', false, currency)}
 				</div>
+				{#if form.kind === 'DIVIDEND'}
+					{@render updateCashField(
+						'Untick if the dividend was not paid into one of this portfolio’s cash accounts.'
+					)}
+				{/if}
+			{:else if form.kind === 'OPENING_CASH'}
+				{@render decimalField('amount', 'Balance', true, currency)}
+				<p class="-mt-2 text-xs text-muted-foreground">
+					The account's balance on this date, before the transactions you record after it. Negative
+					if overdrawn.
+				</p>
+			{:else if isTransfer}
+				<div class="grid grid-cols-2 gap-3">
+					{@render decimalField(
+						'amount',
+						form.kind === 'FX_EXCHANGE' ? 'Amount spent' : 'Amount',
+						true,
+						currency
+					)}
+					{@render decimalField('fee', 'Fee', false, currency)}
+				</div>
 			{:else}
 				{@render decimalField('amount', 'Amount', true, currency)}
 			{/if}
 
-			<div class="space-y-1.5">
-				<Label>Cash account <span class="text-destructive">*</span></Label>
-				<Select.Root type="single" bind:value={form.cashAccountId}>
-					<Select.Trigger class="w-full" aria-invalid={errors.cashAccountId ? true : undefined}>
-						{#if cashAccountById(form.cashAccountId)}
-							{@const account = cashAccountById(form.cashAccountId)!}
-							{account.name} · {account.currency}
-						{:else}
-							<span class="text-muted-foreground">Choose an account</span>
-						{/if}
-					</Select.Trigger>
-					<Select.Content>
-						{#each accountChoices as c (c.id)}
-							<Select.Item value={c.id} label={`${c.name} · ${c.currency}`} />
-						{/each}
-					</Select.Content>
-				</Select.Root>
-				{@render error('cashAccountId')}
-			</div>
+			{#if tracksCash}
+				<div class="space-y-1.5">
+					<Label>
+						{isTransfer ? 'From account' : 'Cash account'} <span class="text-destructive">*</span>
+					</Label>
+					<Select.Root type="single" bind:value={form.cashAccountId}>
+						<Select.Trigger class="w-full" aria-invalid={errors.cashAccountId ? true : undefined}>
+							{#if cashAccountById(form.cashAccountId)}
+								{@const account = cashAccountById(form.cashAccountId)!}
+								{account.name} · {account.currency}
+							{:else}
+								<span class="text-muted-foreground">Choose an account</span>
+							{/if}
+						</Select.Trigger>
+						<Select.Content>
+							{#each accountChoices as c (c.id)}
+								<Select.Item value={c.id} label={`${c.name} · ${c.currency}`} />
+							{/each}
+						</Select.Content>
+					</Select.Root>
+					{@render error('cashAccountId')}
+				</div>
+			{/if}
+
+			{#if isTransfer}
+				<div class="grid gap-3 {form.kind === 'FX_EXCHANGE' ? 'grid-cols-2' : ''}">
+					<div class="space-y-1.5">
+						<Label>To account <span class="text-destructive">*</span></Label>
+						<Select.Root type="single" bind:value={form.destinationCashAccountId}>
+							<Select.Trigger
+								class="w-full"
+								aria-invalid={errors.destinationCashAccountId ? true : undefined}
+							>
+								{#if cashAccountById(form.destinationCashAccountId)}
+									{@const account = cashAccountById(form.destinationCashAccountId)!}
+									{account.name} · {account.currency}
+								{:else}
+									<span class="text-muted-foreground">Choose an account</span>
+								{/if}
+							</Select.Trigger>
+							<Select.Content>
+								{#each destinationChoices as c (c.id)}
+									<Select.Item value={c.id} label={`${c.name} · ${c.currency}`} />
+								{:else}
+									<p class="px-2 py-1.5 text-sm text-muted-foreground">
+										{form.kind === 'FX_EXCHANGE'
+											? 'No account in another currency.'
+											: 'No other account in this currency.'}
+									</p>
+								{/each}
+							</Select.Content>
+						</Select.Root>
+						{@render error('destinationCashAccountId')}
+					</div>
+					{#if form.kind === 'FX_EXCHANGE'}
+						{@render decimalField(
+							'destinationAmount',
+							'Amount received',
+							true,
+							destinationCurrency
+						)}
+					{/if}
+				</div>
+			{/if}
 
 			<div class="space-y-1.5">
 				<Label for="note">Note</Label>

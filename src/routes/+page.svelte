@@ -16,6 +16,7 @@
 		cashAccountById,
 		cashDelta,
 		describe,
+		instrumentById,
 		instrumentLabel,
 		portfolioTransactions
 	} from '#lib/transactions.svelte.js';
@@ -53,7 +54,11 @@
 			if ((t.kind !== 'DIVIDEND' && t.kind !== 'INTEREST') || !t.amount) continue;
 			const month = t.tradeDate.slice(0, 7);
 			if (!months.includes(month) || t.tradeDate > asOf) continue;
-			const ccy = cashAccountById(t.cashAccountId)?.currency ?? '';
+			// A dividend may have no cash account; it is then in the instrument's currency.
+			const ccy =
+				cashAccountById(t.cashAccountId)?.currency ??
+				instrumentById(t.instrumentId)?.quoteCurrency ??
+				'';
 			// eslint-disable-next-line svelte/prefer-svelte-reactivity
 			const series = byCurrency.get(ccy) ?? new Map<string, string>();
 			series.set(month, add(series.get(month) ?? '0', t.amount));
@@ -146,11 +151,8 @@
 		return list;
 	});
 
-	const recent = $derived(
-		portfolioTransactions()
-			.toSorted((a, b) => b.tradeDate.localeCompare(a.tradeDate))
-			.slice(0, 5)
-	);
+	// The API returns the ledger oldest first, so the newest five are the last five reversed.
+	const recent = $derived(portfolioTransactions().toReversed().slice(0, 5));
 </script>
 
 <div class="space-y-6">
@@ -367,8 +369,8 @@
 							<div class="font-medium">{describe(t)}</div>
 							<div class="text-xs text-muted-foreground">{t.tradeDate} · {KIND_LABEL[t.kind]}</div>
 						</div>
-						<div class="tabular-nums {isNegative(delta) ? 'text-destructive' : ''}">
-							{ccy ? `${isNegative(delta) ? '' : '+'}${money(delta, ccy)}` : t.ratio}
+						<div class="tabular-nums {ccy && isNegative(delta) ? 'text-destructive' : ''}">
+							{ccy ? `${isNegative(delta) ? '' : '+'}${money(delta, ccy)}` : (t.ratio ?? '—')}
 						</div>
 					</div>
 				{:else}

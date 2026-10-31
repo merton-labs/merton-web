@@ -4,6 +4,8 @@
 
 /** The API's grammar for a non-negative input (ADR-NUM-04). */
 export const DECIMAL_INPUT = /^\d{1,15}(\.\d{1,8})?$/;
+/** The same grammar with an optional minus sign, e.g. an opening balance. */
+export const SIGNED_DECIMAL_INPUT = /^-?\d{1,15}(\.\d{1,8})?$/;
 
 type Fixed = { units: bigint; scale: number };
 
