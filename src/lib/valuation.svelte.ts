@@ -1,16 +1,9 @@
-// STAND-IN for GET /portfolios/{id}/valuation and /allocation. It mirrors the
-// response shapes and the documented rules (ADR-VAL-02/06/07: latest quote on
-// or before as_of, prices stale after 7 days, FX after 3) so the screens can be
-// built now. Delete this file when the screens call the API; the server is
-// authoritative for every number here.
+// Holdings valuation and allocation from GET /portfolios/{id}/valuation and
+// /allocation (ADR-VAL-02/06/07). Every number here is the server's.
 
-import { add, isZero, mul } from './decimal.js';
-import { fxRates, latestPrice } from './market-data.svelte.js';
-import { currentPortfolio } from './portfolio.svelte.js';
+import { api } from './api.js';
 import {
-	cashBalance,
 	instrumentById,
-	portfolioCashAccounts,
 	type AssetClass,
 	type CashAccount,
 	type Instrument
@@ -60,102 +53,126 @@ export type Valuation = {
 
 export type ClassShare = { assetClass: AssetClass | 'CASH'; value: string; percent: string | null };
 
-// Holdings come from FIFO replay on the server; these match the seed ledger.
-const POSITIONS: Record<string, { instrumentId: string; quantity: string; costBasis: string }[]> = {
-	'p-main': [
-		{ instrumentId: 'i-ptt', quantity: '5000', costBasis: '168918.75' },
-		{ instrumentId: 'i-advanc', quantity: '600', costBasis: '14534.52' },
-		{ instrumentId: 'i-aapl', quantity: '40', costBasis: '7211.00' },
-		{ instrumentId: 'i-voo', quantity: '2', costBasis: '1062.86' },
-		{ instrumentId: 'i-kusa', quantity: '1023.441', costBasis: '19999.9816779' }
-	]
+export type Allocation = {
+	classes: ClassShare[];
+	netValue: string;
+	negativeCash: boolean;
+	partial: boolean;
 };
 
-function daysBetween(from: string, to: string): number {
-	return (Date.parse(to) - Date.parse(from)) / 86_400_000;
-}
+type FxQuoteDto = { rate: string; date: string; stale: boolean };
 
-function fxQuote(from: string, to: string, asOf: string): Quote | null {
-	const rate = fxRates
-		.filter((r) => r.baseCurrency === from && r.quoteCurrency === to && r.rateDate <= asOf)
-		.toSorted((a, b) => b.rateDate.localeCompare(a.rateDate))[0];
-	return rate
-		? { value: rate.rate, date: rate.rateDate, stale: daysBetween(rate.rateDate, asOf) > 3 }
-		: null;
-}
+type ValuationDto = {
+	as_of: string;
+	base_currency: string;
+	partial: boolean;
+	positions_value: string;
+	cash_value: string;
+	net_value: string;
+	portfolio_id: string;
+	positions: {
+		instrument_id: string;
+		name: string;
+		symbol?: string | null;
+		asset_class: AssetClass;
+		quote_currency: string;
+		quantity: string;
+		cost_basis: string;
+		price?: { price: string; date: string; stale: boolean } | null;
+		market_value?: string | null;
+		fx?: FxQuoteDto | null;
+		value?: string | null;
+		unvalued_reason?: UnvaluedReason | null;
+	}[];
+	cash: {
+		cash_account_id: string;
+		name: string;
+		currency: string;
+		balance: string;
+		fx?: FxQuoteDto | null;
+		value?: string | null;
+		unvalued_reason?: UnvaluedReason | null;
+	}[];
+};
 
-function toBase(amount: string, currency: string, base: string, asOf: string) {
-	if (currency === base) return { fx: null, value: amount, reason: null };
-	const fx = fxQuote(currency, base, asOf);
-	if (!fx) return { fx: null, value: null, reason: 'MISSING_FX_RATE' as const };
-	return { fx, value: mul(amount, fx.value), reason: null };
-}
+type AllocationDto = {
+	classes: { asset_class: AssetClass | 'CASH'; value: string; percent?: string | null }[];
+	net_value: string;
+	negative_cash: boolean;
+	partial: boolean;
+};
 
-export function valuation(asOf: string): Valuation {
-	const portfolio = currentPortfolio();
-	const base = portfolio.baseCurrency;
+const fxQuote = (fx?: FxQuoteDto | null): Quote | null =>
+	fx ? { value: fx.rate, date: fx.date, stale: fx.stale } : null;
 
-	const positions: ValuedPosition[] = (POSITIONS[portfolio.id] ?? []).flatMap(
-		(p): ValuedPosition[] => {
-			const instrument = instrumentById(p.instrumentId);
-			if (!instrument) return [];
-			const px = latestPrice(instrument.id, asOf);
-			const price = px
-				? { value: px.price, date: px.priceDate, stale: daysBetween(px.priceDate, asOf) > 7 }
-				: null;
-			if (!price) {
-				return [
-					{
-						instrument,
-						...p,
-						price,
-						marketValue: null,
-						fx: null,
-						value: null,
-						unvaluedReason: 'MISSING_PRICE'
-					}
-				];
-			}
-			const marketValue = mul(p.quantity, price.value);
-			const { fx, value, reason } = toBase(marketValue, instrument.quoteCurrency, base, asOf);
-			return [{ instrument, ...p, price, marketValue, fx, value, unvaluedReason: reason }];
-		}
+export async function fetchValuation(portfolioId: string, asOf: string): Promise<Valuation> {
+	const v = await api<ValuationDto>(
+		'GET',
+		`/portfolios/${portfolioId}/valuation?as_of=${encodeURIComponent(asOf)}`
 	);
-
-	const cash: ValuedCash[] = portfolioCashAccounts().map((account) => {
-		const balance = cashBalance(account.id);
-		const { fx, value, reason } = toBase(balance, account.currency, base, asOf);
-		return { account, balance, fx, value, unvaluedReason: reason };
-	});
-
-	const positionsValue = add('0', ...positions.flatMap((p) => (p.value ? [p.value] : [])));
-	const cashValue = add('0', ...cash.flatMap((c) => (c.value ? [c.value] : [])));
 	return {
-		asOf,
-		baseCurrency: base,
-		partial: [...positions, ...cash].some((x) => x.unvaluedReason),
-		positionsValue,
-		cashValue,
-		netValue: add(positionsValue, cashValue),
-		positions,
-		cash
+		asOf: v.as_of,
+		baseCurrency: v.base_currency,
+		partial: v.partial,
+		positionsValue: v.positions_value,
+		cashValue: v.cash_value,
+		netValue: v.net_value,
+		positions: v.positions.map((p) => ({
+			// The position carries the instrument's fields; prefer the full record when loaded.
+			instrument: instrumentById(p.instrument_id) ?? {
+				id: p.instrument_id,
+				name: p.name,
+				symbol: p.symbol ?? null,
+				assetClass: p.asset_class,
+				quoteCurrency: p.quote_currency,
+				isin: null,
+				exchange: null
+			},
+			quantity: p.quantity,
+			costBasis: p.cost_basis,
+			price: p.price ? { value: p.price.price, date: p.price.date, stale: p.price.stale } : null,
+			marketValue: p.market_value ?? null,
+			fx: fxQuote(p.fx),
+			value: p.value ?? null,
+			unvaluedReason: p.unvalued_reason ?? null
+		})),
+		cash: v.cash.map((c) => ({
+			account: { id: c.cash_account_id, portfolioId, name: c.name, currency: c.currency },
+			balance: c.balance,
+			fx: fxQuote(c.fx),
+			value: c.value ?? null,
+			unvaluedReason: c.unvalued_reason ?? null
+		}))
 	};
 }
 
-/** Signed allocation by asset class; percent is null when net value ≤ 0. */
-export function allocation(v: Valuation): ClassShare[] {
-	// eslint-disable-next-line svelte/prefer-svelte-reactivity -- local scratch map, not state
-	const totals = new Map<AssetClass | 'CASH', string>();
-	for (const p of v.positions) {
-		if (p.value)
-			totals.set(p.instrument.assetClass, add(totals.get(p.instrument.assetClass) ?? '0', p.value));
-	}
-	if (!isZero(v.cashValue) || v.cash.length > 0) totals.set('CASH', v.cashValue);
-	// Mock only: the server computes and rounds these percentages.
-	const net = Number(v.netValue);
-	return [...totals].map(([assetClass, value]) => ({
-		assetClass,
-		value,
-		percent: net > 0 ? ((Number(value) / net) * 100).toFixed(2) : null
-	}));
+export async function fetchAllocation(portfolioId: string, asOf: string): Promise<Allocation> {
+	const a = await api<AllocationDto>(
+		'GET',
+		`/portfolios/${portfolioId}/allocation?as_of=${encodeURIComponent(asOf)}`
+	);
+	return {
+		classes: a.classes.map((c) => ({
+			assetClass: c.asset_class,
+			value: c.value,
+			percent: c.percent ?? null
+		})),
+		netValue: a.net_value,
+		negativeCash: a.negative_cash,
+		partial: a.partial
+	};
+}
+
+/** A placeholder while the first valuation loads. */
+export function emptyValuation(baseCurrency: string, asOf: string): Valuation {
+	return {
+		asOf,
+		baseCurrency,
+		partial: false,
+		positionsValue: '0',
+		cashValue: '0',
+		netValue: '0',
+		positions: [],
+		cash: []
+	};
 }

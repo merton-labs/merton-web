@@ -4,9 +4,8 @@ SvelteKit frontend for [Merton Labs](https://github.com/merton-labs), a self-hos
 multi-user investment portfolio tracker. The REST backend is
 [merton-api](https://github.com/merton-labs/merton-api).
 
-> **Status:** prototype. Sign-in, registration and sign-out use the real API;
-> the other screens still use in-memory mock stores in `src/lib/*.svelte.ts`
-> (a reload resets them).
+> **Status:** prototype. Every screen reads and writes merton-api; CSV import
+> and export are not built yet.
 
 ## Stack
 
@@ -28,6 +27,16 @@ trust that origin, for example `APP_TRUSTED_ORIGINS=http://localhost:5173` for
 `cargo run`, or `APP_TRUSTED_ORIGINS=http://localhost:8080,http://localhost:5173`
 in `.env` when the Compose stack serves the API. In production the app and the
 API are served from the same origin behind a reverse proxy (no CORS).
+
+## Data flow
+
+Stores in `src/lib/*.svelte.ts` hold what the API returned, in camelCase:
+portfolios and instruments load after sign-in (`workspace.svelte.ts`), then
+the selected portfolio's cash accounts and transactions. A write sends the
+request and stores the API's answer; the API's 409 or 422 problem is shown as
+a toast. Holdings, valuation, allocation and cash balances always come from
+the server (`valuation.svelte.ts`, refetched through `live.svelte.ts` after any
+write). Everything is cleared on sign-out.
 
 ## Authentication
 

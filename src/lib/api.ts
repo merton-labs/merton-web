@@ -71,6 +71,29 @@ export async function api<T>(
 	return (await response.json()) as T;
 }
 
+interface Page<T> {
+	items: T[];
+	total: number;
+}
+
+/** Every item of a paginated list, fetched at the API's maximum page size. */
+export async function listAll<T>(path: string, params: Record<string, string> = {}): Promise<T[]> {
+	const items: T[] = [];
+	for (;;) {
+		const query = new URLSearchParams({ ...params, limit: '200', offset: String(items.length) });
+		const page = await api<Page<T>>('GET', `${path}?${query}`);
+		items.push(...page.items);
+		if (page.items.length === 0 || items.length >= page.total) return items;
+	}
+}
+
+/** One line for a toast: the problem's detail plus any field messages. */
+export function errorMessage(e: unknown): string {
+	if (!(e instanceof ApiError)) return 'Something went wrong. Try again.';
+	const fields = e.errors.map((f) => `${f.field} ${f.message}`).join('; ');
+	return fields ? `${e.detail} (${fields})` : e.detail;
+}
+
 async function send(method: Method, path: string, body: unknown, csrf: boolean) {
 	const headers: Record<string, string> = { Accept: 'application/json' };
 	if (body !== undefined) headers['Content-Type'] = 'application/json';

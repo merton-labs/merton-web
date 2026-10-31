@@ -26,7 +26,10 @@
 	import TransactionDialog from '#lib/components/transactions/transaction-dialog.svelte';
 	import { add, isZero } from '#lib/decimal.js';
 	import { isNegative, money, price, quantity } from '#lib/format.js';
+	import { toastError } from '#lib/notify.js';
 	import {
+		CASH_KINDS,
+		EXPENSE_KINDS,
 		INCOME_KINDS,
 		KIND_LABEL,
 		TRADE_KINDS,
@@ -45,6 +48,8 @@
 	type View = 'trades' | 'incomes' | 'all';
 
 	const ALL_KINDS = Object.keys(KIND_LABEL) as Kind[];
+	/** Kinds the transaction dialog can edit; corporate actions have their own page. */
+	const DIALOG_KINDS: Kind[] = [...TRADE_KINDS, ...INCOME_KINDS, ...EXPENSE_KINDS, ...CASH_KINDS];
 
 	let view = $state<View>('trades');
 	let search = $state('');
@@ -57,6 +62,7 @@
 	let dialogOpen = $state(false);
 	let editing = $state<Transaction | null>(null);
 	let pendingDelete = $state<Transaction[] | null>(null);
+	let deleting = $state(false);
 
 	const viewKinds = $derived<Kind[] | null>(
 		view === 'trades' ? TRADE_KINDS : view === 'incomes' ? INCOME_KINDS : null
@@ -171,13 +177,26 @@
 		dialogOpen = true;
 	}
 
-	function confirmDelete() {
+	async function confirmDelete() {
 		if (!pendingDelete) return;
-		const ids = pendingDelete.map((t) => t.id);
-		deleteTransactions(ids);
-		ids.forEach((id) => selected.delete(id));
-		toast.success(ids.length === 1 ? 'Transaction deleted' : `${ids.length} transactions deleted`);
-		pendingDelete = null;
+		const items = pendingDelete;
+		deleting = true;
+		try {
+			await deleteTransactions(items);
+			toast.success(
+				items.length === 1 ? 'Transaction deleted' : `${items.length} transactions deleted`
+			);
+			pendingDelete = null;
+		} catch (err) {
+			// Deleting can break later history (e.g. a sell needs the buy); earlier ones stay deleted.
+			toastError(err);
+			pendingDelete = null;
+		} finally {
+			items.forEach((t) => {
+				if (!portfolioTransactions().some((x) => x.id === t.id)) selected.delete(t.id);
+			});
+			deleting = false;
+		}
 	}
 
 	function resetFilters() {
@@ -410,6 +429,10 @@
 										variant="ghost"
 										size="icon-sm"
 										aria-label="Edit"
+										disabled={!DIALOG_KINDS.includes(t.kind) && !CORPORATE_KINDS.includes(t.kind)}
+										title={DIALOG_KINDS.includes(t.kind) || CORPORATE_KINDS.includes(t.kind)
+											? undefined
+											: 'This kind cannot be edited here yet'}
 										onclick={() =>
 											CORPORATE_KINDS.includes(t.kind)
 												? goto(resolve('/corporate-actions'))
@@ -472,7 +495,9 @@
 			</Dialog.Header>
 			<Dialog.Footer>
 				<Button variant="ghost" onclick={() => (pendingDelete = null)}>Cancel</Button>
-				<Button variant="destructive" onclick={confirmDelete}>Yes, delete</Button>
+				<Button variant="destructive" disabled={deleting} onclick={confirmDelete}>
+					Yes, delete
+				</Button>
 			</Dialog.Footer>
 		{/if}
 	</Dialog.Content>

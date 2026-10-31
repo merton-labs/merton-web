@@ -15,17 +15,19 @@
 	import { isNegative, money } from '#lib/format.js';
 	import { CURRENCY_CODE, currentPortfolio } from '#lib/portfolio.svelte.js';
 	import {
-		cashAccountInUse,
 		createCashAccount,
 		deleteCashAccount,
 		renameCashAccount,
 		type CashAccount,
 		type Kind
 	} from '#lib/transactions.svelte.js';
-	import { UNVALUED_LABEL, valuation } from '#lib/valuation.svelte.js';
+	import { live } from '#lib/live.svelte.js';
+	import { toastError } from '#lib/notify.js';
+	import { UNVALUED_LABEL, fetchValuation } from '#lib/valuation.svelte.js';
 
 	const asOf = new Date().toISOString().slice(0, 10);
-	const v = $derived(valuation(asOf));
+	const valuation = live(() => fetchValuation(currentPortfolio().id, asOf));
+	const v = $derived(valuation.value);
 	const base = $derived(currentPortfolio().baseCurrency);
 
 	let txOpen = $state(false);
@@ -36,6 +38,7 @@
 	let form = $state({ name: '', currency: '' });
 	let errors = $state<Record<string, string>>({});
 	let pendingDelete = $state<CashAccount | null>(null);
+	let busy = $state(false);
 
 	function openTx(kind: Kind, cashAccountId: string) {
 		preset = { kind, cashAccountId };
@@ -49,7 +52,7 @@
 		editOpen = true;
 	}
 
-	function save(event: SubmitEvent) {
+	async function save(event: SubmitEvent) {
 		event.preventDefault();
 		const e: Record<string, string> = {};
 		const name = form.name.trim();
@@ -59,21 +62,35 @@
 		if (!editing && !CURRENCY_CODE.test(currency)) e.currency = 'Use a 3-letter code such as THB';
 		errors = e;
 		if (Object.keys(e).length) return;
-		if (editing) {
-			renameCashAccount(editing.id, name);
-			toast.success('Cash account renamed');
-		} else {
-			createCashAccount(name, currency);
-			toast.success(`${name} added`);
+		busy = true;
+		try {
+			if (editing) {
+				await renameCashAccount(editing, name);
+				toast.success('Cash account renamed');
+			} else {
+				await createCashAccount(currentPortfolio().id, name, currency);
+				toast.success(`${name} added`);
+			}
+			editOpen = false;
+		} catch (err) {
+			toastError(err);
+		} finally {
+			busy = false;
 		}
-		editOpen = false;
 	}
 
-	function confirmDelete() {
+	async function confirmDelete() {
 		if (!pendingDelete) return;
-		deleteCashAccount(pendingDelete.id);
-		toast.success('Cash account deleted');
-		pendingDelete = null;
+		busy = true;
+		try {
+			await deleteCashAccount(pendingDelete);
+			toast.success('Cash account deleted');
+			pendingDelete = null;
+		} catch (err) {
+			toastError(err);
+		} finally {
+			busy = false;
+		}
 	}
 </script>
 
@@ -101,7 +118,7 @@
 					</Table.Row>
 				</Table.Header>
 				<Table.Body>
-					{#each v.cash as c (c.account.id)}
+					{#each v?.cash ?? [] as c (c.account.id)}
 						<Table.Row>
 							<Table.Cell class="font-medium">{c.account.name}</Table.Cell>
 							<Table.Cell>{c.account.currency}</Table.Cell>
@@ -152,10 +169,9 @@
 											>
 											<DropdownMenu.Item
 												variant="destructive"
-												disabled={cashAccountInUse(c.account.id)}
 												onclick={() => (pendingDelete = c.account)}
 											>
-												{cashAccountInUse(c.account.id) ? 'Delete (has transactions)' : 'Delete'}
+												Delete
 											</DropdownMenu.Item>
 										</DropdownMenu.Content>
 									</DropdownMenu.Root>
@@ -165,12 +181,18 @@
 					{:else}
 						<Table.Row>
 							<Table.Cell colspan={5} class="h-24 text-center text-muted-foreground">
-								No cash accounts yet. Add one per currency you hold cash in.
+								{#if valuation.error}
+									<span class="text-destructive">{valuation.error}</span>
+								{:else if !v}
+									Loading…
+								{:else}
+									No cash accounts yet. Add one per currency you hold cash in.
+								{/if}
 							</Table.Cell>
 						</Table.Row>
 					{/each}
 				</Table.Body>
-				{#if v.cash.length > 0}
+				{#if v && v.cash.length > 0}
 					<Table.Footer>
 						<Table.Row>
 							<Table.Cell colspan={3} class="font-medium">Total cash</Table.Cell>
@@ -217,7 +239,7 @@
 			</div>
 			<Dialog.Footer>
 				<Button type="button" variant="ghost" onclick={() => (editOpen = false)}>Cancel</Button>
-				<Button type="submit">Save</Button>
+				<Button type="submit" disabled={busy}>Save</Button>
 			</Dialog.Footer>
 		</form>
 	</Dialog.Content>
@@ -232,11 +254,11 @@
 	<Dialog.Content class="sm:max-w-md">
 		<Dialog.Header>
 			<Dialog.Title>Delete "{pendingDelete?.name}"</Dialog.Title>
-			<Dialog.Description>This account has no transactions and will be removed.</Dialog.Description>
+			<Dialog.Description>Only an account no transaction uses can be deleted.</Dialog.Description>
 		</Dialog.Header>
 		<Dialog.Footer>
 			<Button variant="ghost" onclick={() => (pendingDelete = null)}>Cancel</Button>
-			<Button variant="destructive" onclick={confirmDelete}>Yes, delete</Button>
+			<Button variant="destructive" disabled={busy} onclick={confirmDelete}>Yes, delete</Button>
 		</Dialog.Footer>
 	</Dialog.Content>
 </Dialog.Root>

@@ -15,6 +15,8 @@
 	import Check from '@lucide/svelte/icons/check';
 	import { DECIMAL_INPUT, isZero } from '#lib/decimal.js';
 	import { money } from '#lib/format.js';
+	import { currentPortfolio } from '#lib/portfolio.svelte.js';
+	import { toastError } from '#lib/notify.js';
 	import {
 		CASH_KINDS,
 		EXPENSE_KINDS,
@@ -24,6 +26,7 @@
 		cashAccountById,
 		portfolioCashAccounts,
 		instrumentLabel,
+		EMPTY_FIELDS,
 		cashDelta,
 		createTransaction,
 		describe,
@@ -58,6 +61,7 @@
 	let form = $state(blank('BUY'));
 	let errors = $state<Record<string, string>>({});
 	let instrumentOpen = $state(false);
+	let busy = $state(false);
 
 	function blank(kind: Kind) {
 		return {
@@ -150,6 +154,7 @@
 		const trade = group === 'trades';
 		const charged = trade || group === 'incomes';
 		return {
+			...EMPTY_FIELDS,
 			kind: form.kind,
 			tradeDate: form.tradeDate,
 			instrumentId: needsInstrument ? form.instrumentId : null,
@@ -159,8 +164,6 @@
 			fee: charged ? opt(form.fee) : null,
 			tax: charged ? opt(form.tax) : null,
 			amount: trade ? null : opt(form.amount),
-			ratio: null,
-			cashInLieuQuantity: null,
 			note: opt(form.note)
 		};
 	}
@@ -205,15 +208,24 @@
 		return Object.keys(e).length === 0;
 	}
 
-	function save(addMore: boolean) {
+	async function save(addMore: boolean) {
 		if (!validate()) return;
 		const p = payload();
-		if (editing) {
-			updateTransaction(editing.id, p);
-			toast.success('Transaction updated');
-		} else {
-			createTransaction(p);
-			toast.success(`${describe(p)} added`);
+		busy = true;
+		try {
+			if (editing) {
+				await updateTransaction(editing, p);
+				toast.success('Transaction updated');
+			} else {
+				await createTransaction(currentPortfolio().id, p);
+				toast.success(`${describe(p)} added`);
+			}
+		} catch (err) {
+			// The ledger revalidates the whole history, e.g. a sell beyond the holding.
+			toastError(err);
+			return;
+		} finally {
+			busy = false;
 		}
 		if (addMore) {
 			form = { ...blank(form.kind), tradeDate: form.tradeDate, instrumentId: form.instrumentId };
@@ -427,10 +439,11 @@
 			<Dialog.Footer>
 				<Button type="button" variant="ghost" onclick={() => (open = false)}>Cancel</Button>
 				{#if editing}
-					<Button type="submit">Save changes</Button>
+					<Button type="submit" disabled={busy}>Save changes</Button>
 				{:else}
-					<Button type="submit" variant="outline">Save</Button>
-					<Button type="button" onclick={() => save(true)}>Save and add more</Button>
+					<Button type="submit" variant="outline" disabled={busy}>Save</Button>
+					<Button type="button" disabled={busy} onclick={() => save(true)}>Save and add more</Button
+					>
 				{/if}
 			</Dialog.Footer>
 		</form>

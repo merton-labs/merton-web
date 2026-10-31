@@ -14,15 +14,18 @@
 	import Trash2 from '@lucide/svelte/icons/trash-2';
 	import { DECIMAL_INPUT, isZero } from '#lib/decimal.js';
 	import { price as formatPrice } from '#lib/format.js';
+	import { ApiError } from '#lib/api.js';
 	import {
-		DuplicateError,
 		addFxRate,
 		addPrice,
 		deleteFxRate,
 		deletePrice,
 		fxRates,
-		prices
+		loadMarketData,
+		prices,
+		type Price
 	} from '#lib/market-data.svelte.js';
+	import { toastError } from '#lib/notify.js';
 	import { CURRENCY_CODE } from '#lib/portfolio.svelte.js';
 	import { instrumentById, instrumentLabel, instruments } from '#lib/transactions.svelte.js';
 
@@ -36,6 +39,12 @@
 	let open = $state(false);
 	let form = $state({ instrumentId: '', date: today(), value: '', base: 'USD', quote: 'THB' });
 	let errors = $state<Record<string, string>>({});
+	let busy = $state(false);
+	let loaded = $state(false);
+
+	loadMarketData()
+		.then(() => (loaded = true))
+		.catch(toastError);
 
 	const priceRows = $derived(
 		prices
@@ -55,7 +64,7 @@
 		open = true;
 	}
 
-	function save(event: SubmitEvent) {
+	async function save(event: SubmitEvent) {
 		event.preventDefault();
 		const e: Record<string, string> = {};
 		const value = form.value.trim();
@@ -72,18 +81,44 @@
 		}
 		errors = e;
 		if (Object.keys(e).length) return;
+		busy = true;
 		try {
 			if (view === 'prices') {
-				addPrice({ instrumentId: form.instrumentId, priceDate: form.date, price: value });
+				await addPrice({ instrumentId: form.instrumentId, priceDate: form.date, price: value });
 				toast.success('Price added');
 			} else {
-				addFxRate({ baseCurrency: base, quoteCurrency: quote, rateDate: form.date, rate: value });
+				await addFxRate({
+					baseCurrency: base,
+					quoteCurrency: quote,
+					rateDate: form.date,
+					rate: value
+				});
 				toast.success('FX rate added');
 			}
 			open = false;
 		} catch (err) {
-			if (err instanceof DuplicateError) errors = { date: err.message };
-			else throw err;
+			if (err instanceof ApiError && err.status === 409) errors = { date: err.detail };
+			else toastError(err);
+		} finally {
+			busy = false;
+		}
+	}
+
+	async function removePrice(p: Price) {
+		try {
+			await deletePrice(p);
+			toast.success('Price deleted');
+		} catch (err) {
+			toastError(err);
+		}
+	}
+
+	async function removeFxRate(id: string) {
+		try {
+			await deleteFxRate(id);
+			toast.success('FX rate deleted');
+		} catch (err) {
+			toastError(err);
 		}
 	}
 </script>
@@ -152,10 +187,7 @@
 										size="icon-sm"
 										class="text-destructive"
 										aria-label="Delete"
-										onclick={() => {
-											deletePrice(p.id);
-											toast.success('Price deleted');
-										}}
+										onclick={() => removePrice(p)}
 									>
 										<Trash2 />
 									</Button>
@@ -164,7 +196,9 @@
 						{:else}
 							<Table.Row>
 								<Table.Cell colspan={5} class="h-24 text-center text-muted-foreground">
-									No prices yet. Holdings without a price are left out of the valuation.
+									{loaded
+										? 'No prices yet. Holdings without a price are left out of the valuation.'
+										: 'Loading…'}
 								</Table.Cell>
 							</Table.Row>
 						{/each}
@@ -197,10 +231,7 @@
 										size="icon-sm"
 										class="text-destructive"
 										aria-label="Delete"
-										onclick={() => {
-											deleteFxRate(r.id);
-											toast.success('FX rate deleted');
-										}}
+										onclick={() => removeFxRate(r.id)}
 									>
 										<Trash2 />
 									</Button>
@@ -209,7 +240,7 @@
 						{:else}
 							<Table.Row>
 								<Table.Cell colspan={5} class="h-24 text-center text-muted-foreground">
-									No FX rates yet.
+									{loaded ? 'No FX rates yet.' : 'Loading…'}
 								</Table.Cell>
 							</Table.Row>
 						{/each}
@@ -282,7 +313,7 @@
 			{/if}
 			<Dialog.Footer>
 				<Button type="button" variant="ghost" onclick={() => (open = false)}>Cancel</Button>
-				<Button type="submit">Save</Button>
+				<Button type="submit" disabled={busy}>Save</Button>
 			</Dialog.Footer>
 		</form>
 	</Dialog.Content>
