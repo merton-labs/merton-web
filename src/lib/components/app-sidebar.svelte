@@ -11,6 +11,11 @@
 	import ChartLine from '@lucide/svelte/icons/chart-line';
 	import Briefcase from '@lucide/svelte/icons/briefcase';
 	import Settings from '@lucide/svelte/icons/settings';
+	import LogOut from '@lucide/svelte/icons/log-out';
+	import CircleUser from '@lucide/svelte/icons/circle-user';
+	import { toast } from 'svelte-sonner';
+	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
+	import { auth, logout } from '#lib/auth.svelte.js';
 
 	const groups = [
 		{
@@ -32,6 +37,11 @@
 			]
 		}
 	] as const;
+
+	async function signOut() {
+		await logout();
+		toast.success('Signed out');
+	}
 
 	function isActive(href: string): boolean {
 		return href === '/' ? page.url.pathname === '/' : page.url.pathname.startsWith(href);
@@ -83,6 +93,25 @@
 						</a>
 					{/snippet}
 				</Sidebar.MenuButton>
+			</Sidebar.MenuItem>
+			<Sidebar.MenuItem>
+				<DropdownMenu.Root>
+					<DropdownMenu.Trigger>
+						{#snippet child({ props })}
+							<Sidebar.MenuButton {...props} tooltipContent={auth.user?.email}>
+								<CircleUser />
+								<span class="truncate">{auth.user?.email}</span>
+							</Sidebar.MenuButton>
+						{/snippet}
+					</DropdownMenu.Trigger>
+					<DropdownMenu.Content side="top" align="start" class="w-56">
+						<DropdownMenu.Label class="truncate font-normal text-muted-foreground">
+							{auth.user?.email}
+						</DropdownMenu.Label>
+						<DropdownMenu.Separator />
+						<DropdownMenu.Item onclick={signOut}><LogOut /> Sign out</DropdownMenu.Item>
+					</DropdownMenu.Content>
+				</DropdownMenu.Root>
 			</Sidebar.MenuItem>
 		</Sidebar.Menu>
 	</Sidebar.Footer>

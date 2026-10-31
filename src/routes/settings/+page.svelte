@@ -2,6 +2,7 @@
 	import { mode, setMode } from 'mode-watcher';
 	import * as Card from '#lib/components/ui/card/index.js';
 	import * as Tabs from '#lib/components/ui/tabs/index.js';
+	import { auth } from '#lib/auth.svelte.js';
 </script>
 
 <div class="space-y-6">
@@ -29,8 +30,8 @@
 		<Card.Header>
 			<Card.Title>Account</Card.Title>
 			<Card.Description>
-				Sign-in and sign-out arrive when the screens are wired to /api/v1/auth. There is no account
-				recovery in the MVP; an operator resets accounts in the database.
+				Signed in as {auth.user?.email}. There is no account recovery in the MVP; an operator resets
+				accounts in the database.
 			</Card.Description>
 		</Card.Header>
 	</Card.Root>
