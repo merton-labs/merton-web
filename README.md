@@ -25,13 +25,57 @@ The dev server proxies `/api` to `http://127.0.0.1:8080`, so run merton-api
 alongside it. In production the app and the API are served from the same
 origin behind a reverse proxy (no CORS).
 
-## Checks
+## Running with Docker Compose
+
+`compose.yaml` starts the full stack behind a Caddy reverse proxy on
+`http://localhost:8080` (`/` routes to `web:3000`, `/api/*` routes to `api:8080`
+on the same origin):
+
+```sh
+cp .env.example .env
+# Set APP_SECRET_KEY in .env, e.g. to the output of: openssl rand -base64 48
+docker compose up --build
+```
+
+By default, `api` builds from `../merton-api` (override with
+`MERTON_API_CONTEXT`). SQLite data is stored on the `merton-data` named volume.
+
+- `APP_TRUSTED_ORIGINS` and `ORIGIN` default to `http://localhost:8080`.
+- `TRUSTED_PROXIES` is set to the proxy container's static IP (`172.28.0.10`) on
+  the compose bridge network (`172.28.0.0/24`), because `merton-api` accepts
+  exact proxy IPs only.
+- `SESSION_COOKIE_SECURE` stays at its default (`true`), issuing the
+  `__Host-merton_session` cookie (modern browsers and `curl` treat
+  `http://localhost` as a secure context).
+
+### Full-stack smoke test
+
+With the Compose stack running on `http://localhost:8080`:
+
+```sh
+./scripts/smoke.sh
+```
+
+The script checks `GET /` (HTML), `GET /api/v1/health`, and
+`GET /api/v1/openapi.json`, then runs an end-to-end authentication and CSRF
+round-trip (`register` → `login` → `csrf` → `me` → `logout`) through the
+reverse proxy.
+
+## Checks and CI
 
 ```sh
 pnpm check   # svelte-check (types)
 pnpm lint    # prettier + eslint
 pnpm build
 ```
+
+GitHub Actions (`.github/workflows/ci.yml`) runs on every push to `main` and on
+pull requests:
+
+- `check`: `pnpm install --frozen-lockfile`, `pnpm check`, `pnpm lint`,
+  `pnpm build`.
+- `docker`: builds the production `Dockerfile`, starts the container, and
+  verifies `GET /` returns `200`.
 
 ## Conventions
 
