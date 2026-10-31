@@ -26,7 +26,7 @@ export type Kind =
 
 export const KIND_LABEL: Record<Kind, string> = {
 	OPENING_POSITION: 'Opening position',
-	OPENING_CASH: 'Opening cash',
+	OPENING_CASH: 'Opening balance',
 	BUY: 'Buy',
 	SELL: 'Sell',
 	DIVIDEND: 'Dividend',
@@ -42,10 +42,18 @@ export const KIND_LABEL: Record<Kind, string> = {
 	STOCK_DIVIDEND: 'Stock dividend'
 };
 
-export const TRADE_KINDS: Kind[] = ['BUY', 'SELL'];
+export const TRADE_KINDS: Kind[] = ['BUY', 'SELL', 'OPENING_POSITION'];
 export const INCOME_KINDS: Kind[] = ['DIVIDEND', 'INTEREST'];
 export const EXPENSE_KINDS: Kind[] = ['FEE', 'TAX', 'TAX_RETURN'];
-export const CASH_KINDS: Kind[] = ['DEPOSIT', 'WITHDRAWAL'];
+export const CASH_KINDS: Kind[] = [
+	'DEPOSIT',
+	'WITHDRAWAL',
+	'OPENING_CASH',
+	'CASH_TRANSFER',
+	'FX_EXCHANGE'
+];
+/** Kinds that move cash from one account to another. */
+export const TRANSFER_KINDS: Kind[] = ['CASH_TRANSFER', 'FX_EXCHANGE'];
 /** Edited on the Corporate actions page, not in the transaction dialog. */
 export const CORPORATE_KINDS: Kind[] = ['STOCK_SPLIT', 'STOCK_DIVIDEND'];
 

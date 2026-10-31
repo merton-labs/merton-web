@@ -87,14 +87,13 @@
 
 	const rows = $derived.by(() => {
 		const needle = search.trim().toLowerCase();
-		return portfolioTransactions()
+		const oldestFirst = portfolioTransactions()
 			.filter((t) => !viewKinds || viewKinds.includes(t.kind))
 			.filter((t) => !kindFilter || t.kind === kindFilter)
 			.filter((t) => matches(t, needle))
-			.toSorted((a, b) => {
-				const order = a.tradeDate.localeCompare(b.tradeDate);
-				return sortDesc ? -order : order;
-			});
+			.toSorted((a, b) => a.tradeDate.localeCompare(b.tradeDate));
+		// The API's order is chronological within a date too, so newest-first reverses it.
+		return sortDesc ? oldestFirst.toReversed() : oldestFirst;
 	});
 
 	// Totals per currency; values are never converted (no FX in the browser).
@@ -112,6 +111,9 @@
 			switch (t.kind) {
 				case 'BUY':
 					bump('Buy', c, gross(t));
+					break;
+				case 'OPENING_POSITION':
+					bump('Opening', c, t.amount);
 					break;
 				case 'SELL':
 					bump('Sell', c, gross(t));
@@ -143,6 +145,7 @@
 		}
 		const order = [
 			'Buy',
+			'Opening',
 			'Sell',
 			'Fee',
 			'Dividends',
@@ -208,6 +211,16 @@
 		const instrument = instrumentById(t.instrumentId);
 		if (instrument) return { title: instrument.name, sub: instrument.symbol ?? '' };
 		const account = cashAccountById(t.cashAccountId);
+		const destination = cashAccountById(t.destinationCashAccountId);
+		if (destination) {
+			return {
+				title: `${account?.name ?? '—'} → ${destination.name}`,
+				sub:
+					account?.currency === destination.currency
+						? destination.currency
+						: `${account?.currency ?? ''} → ${destination.currency}`
+			};
+		}
 		return { title: account?.name ?? '—', sub: account?.currency ?? '' };
 	}
 
@@ -217,8 +230,8 @@
 	}
 
 	function charges(t: Transaction): string | null {
-		if (!t.fee && !t.tax) return null;
-		return add(t.fee ?? '0', t.tax ?? '0');
+		const total = add(t.fee ?? '0', t.tax ?? '0');
+		return isZero(total) ? null : total;
 	}
 </script>
 
@@ -418,7 +431,11 @@
 									? 'text-destructive'
 									: ''}"
 							>
-								{isNegative(delta) ? '' : '+'}{money(delta, c)}
+								{#if t.cashAccountId}
+									{isNegative(delta) ? '' : '+'}{money(delta, c)}
+								{:else}
+									<span class="text-xs font-normal text-muted-foreground">No cash effect</span>
+								{/if}
 							</Table.Cell>
 							<Table.Cell class="max-w-40 truncate text-sm text-muted-foreground">
 								{t.note ?? ''}
