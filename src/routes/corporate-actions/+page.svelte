@@ -335,7 +335,7 @@
 					{#if errors[key]}<p class="text-xs text-destructive">{errors[key]}</p>{/if}
 				{/each}
 				<p class="text-xs text-muted-foreground">
-					How fractional shares leave the FIFO lots is still an open decision (ADR-TXN-07).
+					Fractional shares are sold from the oldest FIFO lots (ADR-TXN-07).
 				</p>
 			</fieldset>
 
