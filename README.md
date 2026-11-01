@@ -4,7 +4,7 @@ SvelteKit frontend for [Merton Labs](https://github.com/merton-labs), a self-hos
 multi-user investment portfolio tracker. The REST backend is
 [merton-api](https://github.com/merton-labs/merton-api).
 
-> **Status:** prototype. Every screen reads and writes merton-api; CSV import
+> **Status:** 0.1.0, the MVP (see [CHANGELOG.md](CHANGELOG.md)). Every screen reads and writes merton-api; CSV import
 > and export come after the MVP.
 
 ## Stack
