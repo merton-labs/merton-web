@@ -3,11 +3,9 @@
 	import { BarChart, PieChart } from 'layerchart';
 	import * as Card from '#lib/components/ui/card/index.js';
 	import * as Chart from '#lib/components/ui/chart/index.js';
-	import * as Tabs from '#lib/components/ui/tabs/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
 	import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
 	import Clock from '@lucide/svelte/icons/clock';
-	import { add } from '#lib/decimal.js';
 	import { isNegative, money } from '#lib/format.js';
 	import { currentPortfolio } from '#lib/portfolio.svelte.js';
 	import {
@@ -16,7 +14,6 @@
 		cashAccountById,
 		cashDelta,
 		describe,
-		instrumentById,
 		instrumentLabel,
 		portfolioTransactions
 	} from '#lib/transactions.svelte.js';
@@ -27,6 +24,7 @@
 		fetchAllocation,
 		fetchValuation
 	} from '#lib/valuation.svelte.js';
+	import { fetchDividends, monthLabel, periodRange } from '#lib/dividends.js';
 
 	let asOf = $state(new Date().toISOString().slice(0, 10));
 
@@ -37,60 +35,19 @@
 	const v = $derived(valuation.value ?? emptyValuation(base, asOf));
 	const shares = $derived(allocation.value?.classes ?? []);
 
-	// Income received over the 12 months up to as_of, gross, per currency.
-	const months = $derived.by(() => {
-		const [y, m] = asOf.split('-').map(Number);
-		return Array.from({ length: 12 }, (_, i) => {
-			const d = new Date(Date.UTC(y, m - 1 - (11 - i), 1));
-			return d.toISOString().slice(0, 7);
-		});
-	});
-
-	const income = $derived.by(() => {
-		// Local scratch maps inside a derived; not reactive state.
-		// eslint-disable-next-line svelte/prefer-svelte-reactivity
-		const byCurrency = new Map<string, Map<string, string>>();
-		for (const t of portfolioTransactions()) {
-			if ((t.kind !== 'DIVIDEND' && t.kind !== 'INTEREST') || !t.amount) continue;
-			const month = t.tradeDate.slice(0, 7);
-			if (!months.includes(month) || t.tradeDate > asOf) continue;
-			// A dividend may have no cash account; it is then in the instrument's currency.
-			const ccy =
-				cashAccountById(t.cashAccountId)?.currency ??
-				instrumentById(t.instrumentId)?.quoteCurrency ??
-				'';
-			// eslint-disable-next-line svelte/prefer-svelte-reactivity
-			const series = byCurrency.get(ccy) ?? new Map<string, string>();
-			series.set(month, add(series.get(month) ?? '0', t.amount));
-			byCurrency.set(ccy, series);
-		}
-		return byCurrency;
-	});
-
-	const incomeCurrencies = $derived([...income.keys()].toSorted());
-	let chartCurrency = $state('');
-	const selectedCurrency = $derived(
-		incomeCurrencies.includes(chartCurrency) ? chartCurrency : (incomeCurrencies[0] ?? base)
-	);
-
-	const incomeTotals = $derived(
-		incomeCurrencies.map((c) => ({
-			currency: c,
-			total: add('0', ...(income.get(c)?.values() ?? []))
-		}))
-	);
+	// Dividends received over the 12 trailing months up to as_of, after tax, in
+	// the base currency, as on Snowball's dashboard (ADR-DIV-01).
+	const trailing = $derived(periodRange('ttm', asOf));
+	const dividends = live(() => fetchDividends(portfolio.id, { from: trailing.from, to: asOf }));
 
 	// Geometry needs numbers; labels keep the exact strings.
-	const barData = $derived(
-		months.map((month) => {
-			const amount = income.get(selectedCurrency)?.get(month) ?? '0';
-			const label = new Date(`${month}-01T00:00:00Z`).toLocaleString('en-US', {
-				month: 'short',
-				timeZone: 'UTC'
-			});
-			return { month: label, amount: Number(amount), exact: amount };
-		})
-	);
+	const barData = $derived.by(() => {
+		const byMonth = new Map((dividends.value?.months ?? []).map((m) => [m.month, m.received]));
+		return (trailing.months ?? []).map((month) => {
+			const amount = byMonth.get(month) ?? '0';
+			return { month: monthLabel(month), amount: Number(amount), exact: amount };
+		});
+	});
 
 	const pieData = $derived(
 		shares
@@ -205,13 +162,14 @@
 		</Card.Root>
 		<Card.Root>
 			<Card.Header>
-				<Card.Description>Income received (12 months)</Card.Description>
-				{#each incomeTotals as t (t.currency)}
-					<Card.Title class="text-2xl tabular-nums">{money(t.total, t.currency)}</Card.Title>
-				{:else}
-					<Card.Title class="text-2xl tabular-nums">{money('0', base)}</Card.Title>
-				{/each}
-				<p class="text-xs text-muted-foreground">Dividends and interest, before tax</p>
+				<Card.Description>Dividends received (12 months)</Card.Description>
+				<Card.Title class="text-2xl tabular-nums">
+					{money(dividends.value?.total ?? '0', base)}
+				</Card.Title>
+				<p class="text-xs text-muted-foreground">
+					After tax{dividends.value?.partial ? ' · partial' : ''} ·
+					<a href={resolve('/dividends')} class="hover:underline">Details</a>
+				</p>
 			</Card.Header>
 		</Card.Root>
 	</div>
@@ -318,30 +276,20 @@
 	<div class="grid gap-4 lg:grid-cols-5">
 		<Card.Root class="lg:col-span-3">
 			<Card.Header>
-				<Card.Title>Income received</Card.Title>
-				<Card.Description>12 trailing months, gross</Card.Description>
-				{#if incomeCurrencies.length > 1}
-					<Card.Action>
-						<Tabs.Root value={selectedCurrency} onValueChange={(c) => (chartCurrency = c)}>
-							<Tabs.List>
-								{#each incomeCurrencies as c (c)}
-									<Tabs.Trigger value={c}>{c}</Tabs.Trigger>
-								{/each}
-							</Tabs.List>
-						</Tabs.Root>
-					</Card.Action>
-				{/if}
+				<Card.Title>Dividends received</Card.Title>
+				<Card.Description>12 trailing months, after tax ({base})</Card.Description>
 			</Card.Header>
 			<Card.Content>
 				<Chart.Container
-					config={{ amount: { label: `Income (${selectedCurrency})`, color: 'var(--chart-4)' } }}
+					config={{ amount: { label: `Received (${base})`, color: 'var(--chart-4)' } }}
 					class="h-56 w-full"
 				>
 					<BarChart
 						data={barData}
 						x="month"
 						axis="x"
-						series={[{ key: 'amount', label: selectedCurrency, color: 'var(--chart-4)' }]}
+						props={{ xAxis: { tickOcclusion: true } }}
+						series={[{ key: 'amount', label: base, color: 'var(--chart-4)' }]}
 					>
 						{#snippet tooltip()}
 							<Chart.Tooltip />
