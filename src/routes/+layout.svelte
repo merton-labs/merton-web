@@ -25,7 +25,14 @@
 
 	const PUBLIC_PATHS = ['/login', '/register'];
 	/** Pages that show one portfolio's data and need its ledger loaded. */
-	const PORTFOLIO_PATHS = ['/', '/holdings', '/transactions', '/cash', '/corporate-actions'];
+	const PORTFOLIO_PATHS = [
+		'/',
+		'/holdings',
+		'/dividends',
+		'/transactions',
+		'/cash',
+		'/corporate-actions'
+	];
 
 	const portfolio = $derived(portfolios.find((p) => p.id === session.portfolioId));
 	const isPublic = $derived(PUBLIC_PATHS.includes(page.url.pathname));
