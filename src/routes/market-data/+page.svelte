@@ -12,7 +12,7 @@
 	import { Label } from '#lib/components/ui/label/index.js';
 	import Plus from '@lucide/svelte/icons/plus';
 	import Trash2 from '@lucide/svelte/icons/trash-2';
-	import { DECIMAL_INPUT, isZero } from '#lib/decimal.js';
+	import { DECIMAL_INPUT, cleanDecimal, isZero } from '#lib/decimal.js';
 	import { price as formatPrice } from '#lib/format.js';
 	import { ApiError } from '#lib/api.js';
 	import {
@@ -67,7 +67,7 @@
 	async function save(event: SubmitEvent) {
 		event.preventDefault();
 		const e: Record<string, string> = {};
-		const value = form.value.trim();
+		const value = cleanDecimal(form.value);
 		if (!form.date) e.date = 'Date is required';
 		if (!DECIMAL_INPUT.test(value)) e.value = 'A positive decimal, up to 8 places';
 		else if (isZero(value)) e.value = 'Must be greater than 0';

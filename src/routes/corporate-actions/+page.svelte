@@ -10,7 +10,7 @@
 	import Plus from '@lucide/svelte/icons/plus';
 	import Pencil from '@lucide/svelte/icons/pencil';
 	import Trash2 from '@lucide/svelte/icons/trash-2';
-	import { DECIMAL_INPUT, isZero } from '#lib/decimal.js';
+	import { DECIMAL_INPUT, cleanDecimal, isZero } from '#lib/decimal.js';
 	import { money, quantity } from '#lib/format.js';
 	import { currentPortfolio } from '#lib/portfolio.svelte.js';
 	import { toastError } from '#lib/notify.js';
@@ -105,7 +105,7 @@
 		event.preventDefault();
 		const e: Record<string, string> = {};
 		const positive = (key: keyof typeof form, label: string) => {
-			const v = String(form[key]).trim();
+			const v = cleanDecimal(String(form[key]));
 			if (!DECIMAL_INPUT.test(v)) e[key] = `${label}: a positive decimal, up to 8 places`;
 			else if (isZero(v)) e[key] = `${label} must be greater than 0`;
 		};
@@ -132,14 +132,16 @@
 			tradeDate: form.tradeDate,
 			instrumentId: form.instrumentId,
 			cashAccountId: inLieu ? form.cashAccountId : null,
-			quantity: form.kind === 'STOCK_DIVIDEND' ? form.quantity.trim() : null,
+			quantity: form.kind === 'STOCK_DIVIDEND' ? cleanDecimal(form.quantity) : null,
 			price: null,
 			fee: null,
 			tax: null,
-			amount: inLieu ? form.amount.trim() : null,
+			amount: inLieu ? cleanDecimal(form.amount) : null,
 			ratio:
-				form.kind === 'STOCK_SPLIT' ? `${form.newShares.trim()}:${form.oldShares.trim()}` : null,
-			cashInLieuQuantity: inLieu ? form.cashInLieuQuantity.trim() : null,
+				form.kind === 'STOCK_SPLIT'
+					? `${cleanDecimal(form.newShares)}:${cleanDecimal(form.oldShares)}`
+					: null,
+			cashInLieuQuantity: inLieu ? cleanDecimal(form.cashInLieuQuantity) : null,
 			note: form.note.trim() || null
 		};
 		busy = true;
