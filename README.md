@@ -35,9 +35,9 @@ Stores in `src/lib/*.svelte.ts` hold what the API returned, in camelCase:
 portfolios and instruments load after sign-in (`workspace.svelte.ts`), then
 the selected portfolio's cash accounts and transactions. A write sends the
 request and stores the API's answer; the API's 409 or 422 problem is shown as
-a toast. Holdings, valuation, allocation and cash balances always come from
-the server (`valuation.svelte.ts`, refetched through `live.svelte.ts` after any
-write). Everything is cleared on sign-out.
+a toast. Holdings, valuation, allocation, cash balances and dividends always
+come from the server (`valuation.svelte.ts` and `dividends.ts`, refetched
+through `live.svelte.ts` after any write). Everything is cleared on sign-out.
 
 ## Authentication
 
