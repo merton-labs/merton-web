@@ -73,6 +73,10 @@ By default, `api` builds from `../merton-api` (override with
   `__Host-merton_session` cookie (modern browsers and `curl` treat
   `http://localhost` as a secure context).
 
+Podman works too: run `podman compose up --build` with `docker-compose`
+installed as the compose provider. On Windows, the Podman 5 machine needs a
+WSL with cgroup v2 (run `wsl --update` if `podman machine start` fails).
+
 ### Full-stack smoke test
 
 With the Compose stack running on `http://localhost:8080`:
