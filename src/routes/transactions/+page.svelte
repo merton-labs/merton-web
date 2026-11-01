@@ -133,6 +133,9 @@
 				case 'TAX_RETURN':
 					bump('Tax return', c, t.amount);
 					break;
+				case 'OTHER_EXPENSE':
+					bump('Other expense', c, t.amount);
+					break;
 				case 'DEPOSIT':
 					bump('Deposits', c, t.amount);
 					break;
@@ -152,6 +155,7 @@
 			'Interest',
 			'Tax',
 			'Tax return',
+			'Other expense',
 			'Deposits',
 			'Withdrawals'
 		];
@@ -382,6 +386,7 @@
 						</Table.Head>
 						{#if view === 'incomes'}
 							<Table.Head class="text-right">Total</Table.Head>
+							<Table.Head class="text-right">Per share</Table.Head>
 						{:else}
 							<Table.Head class="text-right">Shares</Table.Head>
 							<Table.Head class="text-right">Price</Table.Head>
@@ -414,6 +419,9 @@
 							{#if view === 'incomes'}
 								<Table.Cell class="text-right tabular-nums">
 									{t.amount ? money(t.amount, c) : '—'}
+								</Table.Cell>
+								<Table.Cell class="text-right tabular-nums">
+									{t.price ? price(t.price, c) : '—'}
 								</Table.Cell>
 							{:else}
 								<Table.Cell class="text-right tabular-nums">

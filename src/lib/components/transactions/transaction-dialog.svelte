@@ -18,6 +18,8 @@
 	import { money } from '#lib/format.js';
 	import { currentPortfolio } from '#lib/portfolio.svelte.js';
 	import { toastError } from '#lib/notify.js';
+	import { live } from '#lib/live.svelte.js';
+	import { fetchValuation } from '#lib/valuation.svelte.js';
 	import {
 		CASH_KINDS,
 		EXPENSE_KINDS,
@@ -78,8 +80,11 @@
 			amount: '',
 			destinationCashAccountId: '',
 			destinationAmount: '',
-			/** Trades and dividends: off records it without touching cash, as Snowball does. */
-			updateCash: true,
+			/**
+			 * Trades, dividends and expenses: off records it without touching cash, as
+			 * Snowball does. Snowball leaves it off for expenses.
+			 */
+			updateCash: !EXPENSE_KINDS.includes(kind),
 			note: ''
 		};
 	}
@@ -134,17 +139,32 @@
 	}
 
 	const kinds = $derived(GROUPS.find((g) => g.value === group)!.kinds);
-	const needsInstrument = $derived(group === 'trades' || form.kind === 'DIVIDEND');
+	const needsInstrument = $derived(
+		group === 'trades' || form.kind === 'DIVIDEND' || form.kind === 'OTHER_EXPENSE'
+	);
+	// Snowball lets a fee, tax or tax return name an instrument, optionally.
+	const showsInstrument = $derived(needsInstrument || group === 'expenses');
 	const isTransfer = $derived(TRANSFER_KINDS.includes(form.kind));
 	const isOpening = $derived(form.kind === 'OPENING_POSITION');
-	// The API makes the cash account optional for trades and dividends only.
-	const canSkipCash = $derived((group === 'trades' && !isOpening) || form.kind === 'DIVIDEND');
+	// The API makes the cash account optional for trades, dividends and expenses.
+	const canSkipCash = $derived(
+		(group === 'trades' && !isOpening) || form.kind === 'DIVIDEND' || group === 'expenses'
+	);
 	const tracksCash = $derived(!isOpening && (!canSkipCash || form.updateCash));
+	// Snowball shows the current cash balance under "Update cash balance" on expenses.
+	const valuation = live(() =>
+		open && group === 'expenses'
+			? fetchValuation(currentPortfolio().id, today())
+			: Promise.resolve(null)
+	);
+	const currentBalance = $derived(
+		valuation.value?.cash.find((c) => c.account.id === form.cashAccountId)?.balance ?? null
+	);
 	const amountInput = $derived(form.kind === 'OPENING_CASH' ? SIGNED_DECIMAL_INPUT : DECIMAL_INPUT);
 	const instrument = $derived(instrumentById(form.instrumentId || null));
 	// The cash account must be in the instrument's quote currency.
 	const accountChoices = $derived(
-		needsInstrument && instrument
+		showsInstrument && instrument
 			? portfolioCashAccounts().filter((c) => c.currency === instrument.quoteCurrency)
 			: portfolioCashAccounts()
 	);
@@ -193,10 +213,11 @@
 			...EMPTY_FIELDS,
 			kind: form.kind,
 			tradeDate: form.tradeDate,
-			instrumentId: needsInstrument ? form.instrumentId : null,
+			instrumentId: showsInstrument && form.instrumentId ? form.instrumentId : null,
 			cashAccountId: tracksCash ? form.cashAccountId : null,
 			quantity: trade ? num(form.quantity) : null,
-			price: trade && !isOpening ? num(form.price) : null,
+			// A dividend's `price` is its payout per share, kept for reference.
+			price: (trade && !isOpening) || form.kind === 'DIVIDEND' ? num(form.price) : null,
 			fee: charged || isTransfer ? num(form.fee) : null,
 			tax: charged ? num(form.tax) : null,
 			// An opening position carries its total cost in `amount`.
@@ -245,6 +266,9 @@
 
 		if (!form.tradeDate) e.tradeDate = 'Date is required';
 		if (needsInstrument && !form.instrumentId) e.instrumentId = 'Choose an instrument';
+		// Without either, the amount has no currency.
+		else if (group === 'expenses' && !form.instrumentId && !tracksCash)
+			e.instrumentId = 'Choose an instrument, or tick Update cash balance';
 		if (tracksCash && !form.cashAccountId) e.cashAccountId = 'Choose a cash account';
 		if (group === 'trades') {
 			positive('quantity', 'Shares');
@@ -260,6 +284,7 @@
 			optional('fee');
 			optional('tax');
 		}
+		if (form.kind === 'DIVIDEND') optional('price');
 		if (isTransfer) {
 			if (!form.destinationCashAccountId)
 				e.destinationCashAccountId =
@@ -393,9 +418,14 @@
 				</div>
 			</div>
 
-			{#if needsInstrument}
+			{#if showsInstrument}
 				<div class="space-y-1.5">
-					<Label>Instrument <span class="text-destructive">*</span></Label>
+					<Label>
+						Instrument
+						{#if needsInstrument}<span class="text-destructive">*</span>{:else}<span
+								class="font-normal text-muted-foreground">(optional)</span
+							>{/if}
+					</Label>
 					<Popover.Root bind:open={instrumentOpen}>
 						<Popover.Trigger>
 							{#snippet child({ props })}
@@ -466,8 +496,8 @@
 					{@render decimalField('amount', 'Total cost', true, currency)}
 				</div>
 				<p class="-mt-2 text-xs text-muted-foreground">
-					A holding you already owned, as one FIFO lot at its total cost (fees included). Cash is
-					not touched. To keep each purchase's price, add buys with "Update cash balance" unticked.
+					A holding you already owned, as one FIFO lot at its total cost (without fees). Cash is not
+					touched. To keep each purchase's price, add buys with "Update cash balance" unticked.
 				</p>
 			{:else if group === 'trades'}
 				<div class="grid grid-cols-2 gap-3 rounded-lg border p-3">
@@ -482,7 +512,18 @@
 					'Untick for holdings you already owned or moved from another broker: the trade sets shares and cost basis but leaves cash alone.'
 				)}
 			{:else if group === 'incomes'}
-				{@render decimalField('amount', 'Total received', true, currency)}
+				{#if form.kind === 'DIVIDEND'}
+					<div class="grid grid-cols-2 gap-3">
+						{@render decimalField('amount', 'Total received', true, currency)}
+						{@render decimalField('price', 'Per share', false, currency)}
+					</div>
+					<p class="-mt-2 text-xs text-muted-foreground">
+						Total received is before tax. Per share is the payout for one share, for reference only;
+						leave it empty if you don't know it.
+					</p>
+				{:else}
+					{@render decimalField('amount', 'Total received', true, currency)}
+				{/if}
 				<div class="grid grid-cols-2 gap-3">
 					{@render decimalField('fee', 'Fee', false, currency)}
 					{@render decimalField('tax', 'Tax withheld', false, currency)}
@@ -508,6 +549,21 @@
 					)}
 					{@render decimalField('fee', 'Fee', false, currency)}
 				</div>
+			{:else if group === 'expenses'}
+				{@render decimalField(
+					'amount',
+					form.kind === 'FEE' ? 'Fee' : form.kind === 'OTHER_EXPENSE' ? 'Amount' : 'Tax',
+					true,
+					currency
+				)}
+				{#if form.kind === 'FEE'}
+					<p class="-mt-2 text-xs text-muted-foreground">
+						A fixed broker fee, e.g. monthly. A trade's own fee goes on the trade.
+					</p>
+				{/if}
+				{@render updateCashField(
+					'Untick to record it without changing a cash balance; it then needs an instrument.'
+				)}
 			{:else}
 				{@render decimalField('amount', 'Amount', true, currency)}
 			{/if}
@@ -533,6 +589,11 @@
 						</Select.Content>
 					</Select.Root>
 					{@render error('cashAccountId')}
+					{#if group === 'expenses' && currentBalance !== null}
+						<p class="text-xs text-muted-foreground">
+							Current cash balance: {money(currentBalance, currency)}
+						</p>
+					{/if}
 				</div>
 			{/if}
 
