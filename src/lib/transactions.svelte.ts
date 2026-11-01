@@ -17,6 +17,7 @@ export type Kind =
 	| 'FEE'
 	| 'TAX'
 	| 'TAX_RETURN'
+	| 'OTHER_EXPENSE'
 	| 'DEPOSIT'
 	| 'WITHDRAWAL'
 	| 'CASH_TRANSFER'
@@ -34,6 +35,7 @@ export const KIND_LABEL: Record<Kind, string> = {
 	FEE: 'Fee',
 	TAX: 'Tax',
 	TAX_RETURN: 'Tax return',
+	OTHER_EXPENSE: 'Other expense',
 	DEPOSIT: 'Deposit',
 	WITHDRAWAL: 'Withdrawal',
 	CASH_TRANSFER: 'Transfer',
@@ -44,7 +46,7 @@ export const KIND_LABEL: Record<Kind, string> = {
 
 export const TRADE_KINDS: Kind[] = ['BUY', 'SELL', 'OPENING_POSITION'];
 export const INCOME_KINDS: Kind[] = ['DIVIDEND', 'INTEREST'];
-export const EXPENSE_KINDS: Kind[] = ['FEE', 'TAX', 'TAX_RETURN'];
+export const EXPENSE_KINDS: Kind[] = ['FEE', 'TAX', 'TAX_RETURN', 'OTHER_EXPENSE'];
 export const CASH_KINDS: Kind[] = [
 	'DEPOSIT',
 	'WITHDRAWAL',
@@ -328,6 +330,7 @@ export function cashDelta(t: TransactionInput): string {
 			return add(t.amount ?? '0', neg(charges));
 		case 'FEE':
 		case 'TAX':
+		case 'OTHER_EXPENSE':
 		case 'WITHDRAWAL':
 			return neg(t.amount ?? '0');
 		case 'CASH_TRANSFER':
