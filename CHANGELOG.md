@@ -20,6 +20,10 @@ All notable changes to merton-web are recorded here. The format follows
 - The dashboard's income card and chart now show dividends and interest
   received after tax and fees, in the portfolio currency, from the API
   (they were before tax, per currency, and computed in the browser).
+- In the transaction dialog, "Update cash balance" now behaves like Snowball
+  Analytics across trades, dividends and expenses: it sits below Note, starts
+  unticked, shows the current cash balance above the checkbox, and reveals the
+  cash account selector when ticked.
 
 ## [0.1.0] - 2026-11-01
 

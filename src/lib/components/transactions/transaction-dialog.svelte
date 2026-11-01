@@ -81,10 +81,10 @@
 			destinationCashAccountId: '',
 			destinationAmount: '',
 			/**
-			 * Trades, dividends and expenses: off records it without touching cash, as
-			 * Snowball does. Snowball leaves it off for expenses.
+			 * Trades, dividends and expenses: off records it without touching cash.
+			 * Snowball starts every form with it off.
 			 */
-			updateCash: !EXPENSE_KINDS.includes(kind),
+			updateCash: false,
 			note: ''
 		};
 	}
@@ -151,14 +151,21 @@
 		(group === 'trades' && !isOpening) || form.kind === 'DIVIDEND' || group === 'expenses'
 	);
 	const tracksCash = $derived(!isOpening && (!canSkipCash || form.updateCash));
-	// Snowball shows the current cash balance under "Update cash balance" on expenses.
+	// Snowball shows the current cash balance above "Update cash balance", ticked or not.
 	const valuation = live(() =>
-		open && group === 'expenses'
-			? fetchValuation(currentPortfolio().id, today())
-			: Promise.resolve(null)
+		open && canSkipCash ? fetchValuation(currentPortfolio().id, today()) : Promise.resolve(null)
 	);
 	const currentBalance = $derived(
 		valuation.value?.cash.find((c) => c.account.id === form.cashAccountId)?.balance ?? null
+	);
+	const cashHint = $derived(
+		group === 'trades'
+			? 'The cash account pays for the buy or receives the sale. Leave it unticked for holdings you already owned or moved from another broker.'
+			: group === 'incomes'
+				? 'The cash account receives the dividend, less tax and fee.'
+				: form.kind === 'TAX_RETURN'
+					? 'The cash account receives the amount. Unticked, it needs an instrument.'
+					: 'The cash account pays the amount. Unticked, it needs an instrument.'
 	);
 	const amountInput = $derived(form.kind === 'OPENING_CASH' ? SIGNED_DECIMAL_INPUT : DECIMAL_INPUT);
 	const instrument = $derived(instrumentById(form.instrumentId || null));
@@ -333,13 +340,27 @@
 	{/if}
 {/snippet}
 
-{#snippet updateCashField(hint: string)}
-	<div class="space-y-1">
-		<Label class="flex items-center gap-2 font-normal">
-			<Checkbox bind:checked={form.updateCash} />
-			Update cash balance
+{#snippet cashAccountField()}
+	<div class="space-y-1.5">
+		<Label>
+			{isTransfer ? 'From account' : 'Cash account'} <span class="text-destructive">*</span>
 		</Label>
-		<p class="text-xs text-muted-foreground">{hint}</p>
+		<Select.Root type="single" bind:value={form.cashAccountId}>
+			<Select.Trigger class="w-full" aria-invalid={errors.cashAccountId ? true : undefined}>
+				{#if cashAccountById(form.cashAccountId)}
+					{@const account = cashAccountById(form.cashAccountId)!}
+					{account.name} · {account.currency}
+				{:else}
+					<span class="text-muted-foreground">Choose an account</span>
+				{/if}
+			</Select.Trigger>
+			<Select.Content>
+				{#each accountChoices as c (c.id)}
+					<Select.Item value={c.id} label={`${c.name} · ${c.currency}`} />
+				{/each}
+			</Select.Content>
+		</Select.Root>
+		{@render error('cashAccountId')}
 	</div>
 {/snippet}
 
@@ -508,9 +529,6 @@
 					{@render decimalField('fee', 'Fee', false, currency)}
 					{@render decimalField('tax', 'Tax', false, currency)}
 				</div>
-				{@render updateCashField(
-					'Untick for holdings you already owned or moved from another broker: the trade sets shares and cost basis but leaves cash alone.'
-				)}
 			{:else if group === 'incomes'}
 				{#if form.kind === 'DIVIDEND'}
 					<div class="grid grid-cols-2 gap-3">
@@ -528,11 +546,6 @@
 					{@render decimalField('fee', 'Fee', false, currency)}
 					{@render decimalField('tax', 'Tax withheld', false, currency)}
 				</div>
-				{#if form.kind === 'DIVIDEND'}
-					{@render updateCashField(
-						'Untick if the dividend was not paid into one of this portfolio’s cash accounts.'
-					)}
-				{/if}
 			{:else if form.kind === 'OPENING_CASH'}
 				{@render decimalField('amount', 'Balance', true, currency)}
 				<p class="-mt-2 text-xs text-muted-foreground">
@@ -561,40 +574,12 @@
 						A fixed broker fee, e.g. monthly. A trade's own fee goes on the trade.
 					</p>
 				{/if}
-				{@render updateCashField(
-					'Untick to record it without changing a cash balance; it then needs an instrument.'
-				)}
 			{:else}
 				{@render decimalField('amount', 'Amount', true, currency)}
 			{/if}
 
-			{#if tracksCash}
-				<div class="space-y-1.5">
-					<Label>
-						{isTransfer ? 'From account' : 'Cash account'} <span class="text-destructive">*</span>
-					</Label>
-					<Select.Root type="single" bind:value={form.cashAccountId}>
-						<Select.Trigger class="w-full" aria-invalid={errors.cashAccountId ? true : undefined}>
-							{#if cashAccountById(form.cashAccountId)}
-								{@const account = cashAccountById(form.cashAccountId)!}
-								{account.name} · {account.currency}
-							{:else}
-								<span class="text-muted-foreground">Choose an account</span>
-							{/if}
-						</Select.Trigger>
-						<Select.Content>
-							{#each accountChoices as c (c.id)}
-								<Select.Item value={c.id} label={`${c.name} · ${c.currency}`} />
-							{/each}
-						</Select.Content>
-					</Select.Root>
-					{@render error('cashAccountId')}
-					{#if group === 'expenses' && currentBalance !== null}
-						<p class="text-xs text-muted-foreground">
-							Current cash balance: {money(currentBalance, currency)}
-						</p>
-					{/if}
-				</div>
+			{#if tracksCash && !canSkipCash}
+				{@render cashAccountField()}
 			{/if}
 
 			{#if isTransfer}
@@ -643,6 +628,25 @@
 				<Textarea id="note" rows={2} bind:value={form.note} />
 				{@render error('note')}
 			</div>
+
+			<!-- As in Snowball: below the note, unticked by default, with the balance above it. -->
+			{#if canSkipCash}
+				<div class="space-y-1">
+					{#if currentBalance !== null}
+						<p class="text-xs text-muted-foreground">
+							Current cash balance: {money(currentBalance, currency)}
+						</p>
+					{/if}
+					<Label class="flex items-center gap-2 font-normal">
+						<Checkbox bind:checked={form.updateCash} />
+						Update cash balance
+					</Label>
+					<p class="text-xs text-muted-foreground">{cashHint}</p>
+				</div>
+				{#if tracksCash}
+					{@render cashAccountField()}
+				{/if}
+			{/if}
 
 			<div class="flex items-end justify-between border-t pt-4">
 				<div>
