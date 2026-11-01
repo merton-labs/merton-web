@@ -4,6 +4,23 @@ All notable changes to merton-web are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- Dividends page, modelled on Snowball Analytics' Analytics → Dividends:
+  "Dividends received" by period (all time, year to date, 12 trailing
+  months or a year), monthly or annual; an all-time breakdown by holding,
+  class or currency; a table by holding; and "Dividend growth" (each month,
+  one bar per year, for the last three years). Payments without an FX rate
+  are listed. Needs the merton-api `dividends` endpoint.
+
+### Changed
+
+- The dashboard's income card and chart now show dividends and interest
+  received after tax and fees, in the portfolio currency, from the API
+  (they were before tax, per currency, and computed in the browser).
+
 ## [0.1.0] - 2026-11-01
 
 The first release: the MVP frontend. It needs

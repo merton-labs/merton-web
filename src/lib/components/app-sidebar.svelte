@@ -4,6 +4,7 @@
 	import * as Sidebar from '#lib/components/ui/sidebar/index.js';
 	import LayoutDashboard from '@lucide/svelte/icons/layout-dashboard';
 	import ChartPie from '@lucide/svelte/icons/chart-pie';
+	import HandCoins from '@lucide/svelte/icons/hand-coins';
 	import ArrowLeftRight from '@lucide/svelte/icons/arrow-left-right';
 	import Wallet from '@lucide/svelte/icons/wallet';
 	import Split from '@lucide/svelte/icons/split';
@@ -23,6 +24,7 @@
 			items: [
 				{ title: 'Dashboard', href: '/', icon: LayoutDashboard },
 				{ title: 'Holdings', href: '/holdings', icon: ChartPie },
+				{ title: 'Dividends', href: '/dividends', icon: HandCoins },
 				{ title: 'Transactions', href: '/transactions', icon: ArrowLeftRight },
 				{ title: 'Cash accounts', href: '/cash', icon: Wallet },
 				{ title: 'Corporate actions', href: '/corporate-actions', icon: Split }
