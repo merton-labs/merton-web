@@ -7,6 +7,16 @@ export const DECIMAL_INPUT = /^\d{1,15}(\.\d{1,8})?$/;
 /** The same grammar with an optional minus sign, e.g. an opening balance. */
 export const SIGNED_DECIMAL_INPUT = /^-?\d{1,15}(\.\d{1,8})?$/;
 
+/**
+ * Trims a typed number and drops `,` thousands separators (`1,000.5` becomes
+ * `1000.5`), as Snowball Analytics' forms accept them. Anything else is left
+ * for the grammar above to reject, so the API still receives its own format.
+ */
+export function cleanDecimal(value: string): string {
+	const trimmed = value.trim();
+	return /^-?\d{1,3}(,\d{3})+(\.\d+)?$/.test(trimmed) ? trimmed.replaceAll(',', '') : trimmed;
+}
+
 type Fixed = { units: bigint; scale: number };
 
 function parse(value: string): Fixed {

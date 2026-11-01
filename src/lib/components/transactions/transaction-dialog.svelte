@@ -14,7 +14,7 @@
 	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
 	import ChevronsUpDown from '@lucide/svelte/icons/chevrons-up-down';
 	import Check from '@lucide/svelte/icons/check';
-	import { DECIMAL_INPUT, SIGNED_DECIMAL_INPUT, isZero } from '#lib/decimal.js';
+	import { DECIMAL_INPUT, SIGNED_DECIMAL_INPUT, cleanDecimal, isZero } from '#lib/decimal.js';
 	import { money } from '#lib/format.js';
 	import { currentPortfolio } from '#lib/portfolio.svelte.js';
 	import { toastError } from '#lib/notify.js';
@@ -182,10 +182,11 @@
 		});
 	});
 
-	const filledDecimal = (v: string) => DECIMAL_INPUT.test(v.trim());
+	const filledDecimal = (v: string) => DECIMAL_INPUT.test(cleanDecimal(v));
 
 	function payload(): TransactionInput {
 		const opt = (v: string) => (v.trim() === '' ? null : v.trim());
+		const num = (v: string) => opt(cleanDecimal(v));
 		const trade = group === 'trades';
 		const charged = (trade && !isOpening) || group === 'incomes';
 		return {
@@ -194,14 +195,14 @@
 			tradeDate: form.tradeDate,
 			instrumentId: needsInstrument ? form.instrumentId : null,
 			cashAccountId: tracksCash ? form.cashAccountId : null,
-			quantity: trade ? opt(form.quantity) : null,
-			price: trade && !isOpening ? opt(form.price) : null,
-			fee: charged || isTransfer ? opt(form.fee) : null,
-			tax: charged ? opt(form.tax) : null,
+			quantity: trade ? num(form.quantity) : null,
+			price: trade && !isOpening ? num(form.price) : null,
+			fee: charged || isTransfer ? num(form.fee) : null,
+			tax: charged ? num(form.tax) : null,
 			// An opening position carries its total cost in `amount`.
-			amount: trade && !isOpening ? null : opt(form.amount),
+			amount: trade && !isOpening ? null : num(form.amount),
 			destinationCashAccountId: isTransfer ? form.destinationCashAccountId : null,
-			destinationAmount: form.kind === 'FX_EXCHANGE' ? opt(form.destinationAmount) : null,
+			destinationAmount: form.kind === 'FX_EXCHANGE' ? num(form.destinationAmount) : null,
 			note: opt(form.note)
 		};
 	}
@@ -216,28 +217,29 @@
 				: isTransfer
 					? [form.fee]
 					: [];
-		if (group !== 'trades' && !amountInput.test(form.amount.trim())) return null;
+		if (group !== 'trades' && !amountInput.test(cleanDecimal(form.amount))) return null;
 		if (!required.every(filledDecimal)) return null;
 		if (!optional.every((v) => v.trim() === '' || filledDecimal(v))) return null;
 		if (!currency) return null;
 		const source = money(cashDelta(p), currency);
 		// The destination account is credited the amount (a transfer) or the amount received.
-		if (form.kind === 'CASH_TRANSFER') return `${source} · +${money(form.amount.trim(), currency)}`;
+		if (form.kind === 'CASH_TRANSFER')
+			return `${source} · +${money(cleanDecimal(form.amount), currency)}`;
 		if (form.kind === 'FX_EXCHANGE' && destinationCurrency && filledDecimal(form.destinationAmount))
-			return `${source} · +${money(form.destinationAmount.trim(), destinationCurrency)}`;
+			return `${source} · +${money(cleanDecimal(form.destinationAmount), destinationCurrency)}`;
 		return source;
 	});
 
 	function validate(): boolean {
 		const e: Record<string, string> = {};
 		const positive = (field: keyof typeof form, label: string) => {
-			const v = String(form[field]).trim();
+			const v = cleanDecimal(String(form[field]));
 			if (!v) e[field] = `${label} is required`;
 			else if (!DECIMAL_INPUT.test(v)) e[field] = 'Up to 15 digits and 8 decimal places';
 			else if (isZero(v)) e[field] = `${label} must be greater than 0`;
 		};
 		const optional = (field: keyof typeof form) => {
-			const v = String(form[field]).trim();
+			const v = cleanDecimal(String(form[field]));
 			if (v && !DECIMAL_INPUT.test(v)) e[field] = 'Up to 15 digits and 8 decimal places';
 		};
 
@@ -249,7 +251,7 @@
 			if (isOpening) positive('amount', 'Total cost');
 			else positive('price', 'Price');
 		} else if (form.kind === 'OPENING_CASH') {
-			if (!SIGNED_DECIMAL_INPUT.test(form.amount.trim()))
+			if (!SIGNED_DECIMAL_INPUT.test(cleanDecimal(form.amount)))
 				e.amount = 'A decimal, negative if overdrawn; up to 15 digits and 8 decimal places';
 		} else {
 			positive('amount', group === 'incomes' ? 'Total received' : 'Amount');

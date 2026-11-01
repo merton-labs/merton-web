@@ -2,17 +2,19 @@
 
 FROM node:24-slim AS builder
 
-ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0
-RUN corepack enable
+# Bun installs packages; the build and the server still run on Node.
+COPY --from=oven/bun:1.4.4-slim /usr/local/bin/bun /usr/local/bin/bun
 
 WORKDIR /app
 
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
-RUN --mount=type=cache,target=/root/.local/share/pnpm/store \
-    pnpm install --frozen-lockfile
+COPY package.json bun.lock ./
+RUN --mount=type=cache,target=/root/.bun/install/cache \
+    bun install --frozen-lockfile
 
 COPY . .
-RUN pnpm build && pnpm prune --prod
+RUN bun run build \
+    && rm -rf node_modules \
+    && bun install --frozen-lockfile --production
 
 FROM node:24-slim AS runtime
 
