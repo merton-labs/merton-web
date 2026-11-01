@@ -24,6 +24,12 @@ All notable changes to merton-web are recorded here. The format follows
   Analytics across trades, dividends and expenses: it sits below Note, starts
   unticked, shows the current cash balance above the checkbox, and reveals the
   cash account selector when ticked.
+- The Holdings table follows Snowball Analytics' columns: cost basis with
+  average cost, current value with price, Div. received, Capital gain and
+  its %, Realized P&L, and Total profit and its % with a breakdown on hover,
+  all from the merton-api `returns` endpoint in each holding's currency. A
+  "Show sold" switch lists sold positions. (The unrealized gain was computed
+  in the browser before.)
 
 ## [0.1.0] - 2026-11-01
 
