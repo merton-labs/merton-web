@@ -5,7 +5,7 @@ multi-user investment portfolio tracker. The REST backend is
 [merton-api](https://github.com/merton-labs/merton-api).
 
 > **Status:** 0.1.0, the MVP (see [CHANGELOG.md](CHANGELOG.md)). Every screen reads and writes merton-api; CSV import
-> and export come after the MVP.
+> and export are in the backlog (merton-api `docs/PROJECT_PLAN.md` §4).
 
 ## Stack
 
