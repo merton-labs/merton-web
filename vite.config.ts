@@ -1,9 +1,9 @@
 import tailwindcss from '@tailwindcss/vite';
 import adapter from '@sveltejs/adapter-node';
 import { sveltekit } from '@sveltejs/kit/vite';
-import { defineConfig } from 'vite';
+import { defineConfig, loadEnv } from 'vite';
 
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
 	plugins: [
 		tailwindcss(),
 		sveltekit({
@@ -16,9 +16,10 @@ export default defineConfig({
 		})
 	],
 	server: {
-		// Same-origin in dev too: forward API calls to merton-api (default port 8080).
+		// Same-origin in dev too: forward API calls to merton-api on its default
+		// port 18080. MERTON_API_URL (from the environment or .env) overrides it.
 		proxy: {
-			'/api': 'http://127.0.0.1:8080'
+			'/api': loadEnv(mode, process.cwd(), 'MERTON_').MERTON_API_URL || 'http://127.0.0.1:18080'
 		}
 	}
-});
+}));

@@ -22,10 +22,12 @@ bun install
 bun run dev         # http://localhost:5173
 ```
 
-The dev server proxies `/api` to `http://127.0.0.1:8080`, so run merton-api
-alongside it. The browser sends `Origin: http://localhost:5173`, so the API must
-trust that origin, for example `APP_TRUSTED_ORIGINS=http://localhost:5173` for
-`cargo run`, or `APP_TRUSTED_ORIGINS=http://localhost:8080,http://localhost:5173`
+The dev server proxies `/api` to `http://127.0.0.1:18080`, so run merton-api
+alongside it (18080 is its default port). If the API listens elsewhere, set
+`MERTON_API_URL`, for example `MERTON_API_URL=http://127.0.0.1:8080`, in the
+environment or in `.env`. The browser sends `Origin: http://localhost:5173`, so
+the API must trust that origin, for example `APP_TRUSTED_ORIGINS=http://localhost:5173` for
+`cargo run`, or `APP_TRUSTED_ORIGINS=http://localhost:18080,http://localhost:5173`
 in `.env` when the Compose stack serves the API. In production the app and the
 API are served from the same origin behind a reverse proxy (no CORS).
 
@@ -54,7 +56,7 @@ session so the app returns to the sign-in page.
 ## Running with Docker Compose
 
 `compose.yaml` starts the full stack behind a Caddy reverse proxy on
-`http://localhost:8080` (`/` routes to `web:3000`, `/api/*` routes to `api:8080`
+`http://localhost:18080` (`/` routes to `web:3000`, `/api/*` routes to `api:18080`
 on the same origin):
 
 ```sh
@@ -65,8 +67,15 @@ docker compose up --build
 
 By default, `api` builds from `../merton-api` (override with
 `MERTON_API_CONTEXT`). SQLite data is stored on the `merton-data` named volume.
+To use PostgreSQL (for example Neon) instead, set `DATABASE_URL` in `.env` to
+its direct connection string with `sslmode=require`; the API creates the tables
+on startup. Data already in SQLite is not copied over.
 
-- `APP_TRUSTED_ORIGINS` and `ORIGIN` default to `http://localhost:8080`.
+- `APP_TRUSTED_ORIGINS` and `ORIGIN` default to `http://localhost:18080`.
+- To publish on another host port, set `MERTON_HTTP_PORT` in `.env`, and set
+  `ORIGIN` and `APP_TRUSTED_ORIGINS` to the matching URL. The default is 18080
+  because Hyper-V/WSL on Windows often reserve 8080 (see
+  `netsh int ipv4 show excludedportrange protocol=tcp`).
 - `TRUSTED_PROXIES` is set to the proxy container's static IP (`172.28.0.10`) on
   the compose bridge network (`172.28.0.0/24`), because `merton-api` accepts
   exact proxy IPs only.
@@ -80,7 +89,7 @@ WSL with cgroup v2 (run `wsl --update` if `podman machine start` fails).
 
 ### Full-stack smoke test
 
-With the Compose stack running on `http://localhost:8080`:
+With the Compose stack running on `http://localhost:18080`:
 
 ```sh
 ./scripts/smoke.sh

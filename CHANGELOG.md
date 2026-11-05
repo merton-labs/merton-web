@@ -17,6 +17,16 @@ All notable changes to merton-web are recorded here. The format follows
 
 ### Changed
 
+- Docker Compose: the API's `DATABASE_URL` can be set in `.env`, for example
+  to a PostgreSQL (Neon) URL; it still defaults to SQLite on the
+  `merton-data` volume.
+- The default port is now 18080 instead of 8080, because Hyper-V/WSL on
+  Windows often reserve 8080: Compose publishes `http://localhost:18080`,
+  `ORIGIN` and the smoke test default to it, and the API listens on 18080
+  (needs merton-api with the same default).
+- Docker Compose: the host port can be set with `MERTON_HTTP_PORT`.
+- The dev server's `/api` proxy target can be set with `MERTON_API_URL`
+  (default `http://127.0.0.1:18080`).
 - The dashboard's income card and chart now show dividends and interest
   received after tax and fees, in the portfolio currency, from the API
   (they were before tax, per currency, and computed in the browser).

@@ -1,6 +1,6 @@
 :80 {
 	handle /api/* {
-		reverse_proxy api:8080
+		reverse_proxy api:18080
 	}
 	handle {
 		reverse_proxy web:3000
