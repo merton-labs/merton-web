@@ -6,7 +6,8 @@ services:
       - api
       - web
     ports:
-      - '127.0.0.1:8080:80'
+      # Host port; set MERTON_HTTP_PORT (and ORIGIN, APP_TRUSTED_ORIGINS) in .env to change it.
+      - '127.0.0.1:${MERTON_HTTP_PORT:-18080}:80'
     volumes:
       - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
     networks:
@@ -19,10 +20,11 @@ services:
     restart: unless-stopped
     environment:
       APP_HOST: 0.0.0.0
-      APP_PORT: 8080
-      DATABASE_URL: sqlite:///app/data/merton.db
+      APP_PORT: 18080
+      # SQLite on the merton-data volume unless .env sets a postgres:// URL.
+      DATABASE_URL: ${DATABASE_URL:-sqlite:///app/data/merton.db}
       APP_SECRET_KEY: ${APP_SECRET_KEY:?set APP_SECRET_KEY (e.g. openssl rand -base64 48)}
-      APP_TRUSTED_ORIGINS: ${APP_TRUSTED_ORIGINS:-http://localhost:8080}
+      APP_TRUSTED_ORIGINS: ${APP_TRUSTED_ORIGINS:-http://localhost:18080}
       SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-true}
       TRUSTED_PROXIES: ${TRUSTED_PROXIES:-172.28.0.10}
       AUTH_MAX_CONCURRENT_HASHES: ${AUTH_MAX_CONCURRENT_HASHES:-4}
@@ -39,7 +41,7 @@ services:
     environment:
       HOST: 0.0.0.0
       PORT: 3000
-      ORIGIN: ${ORIGIN:-http://localhost:8080}
+      ORIGIN: ${ORIGIN:-http://localhost:18080}
     networks:
       - merton
 
