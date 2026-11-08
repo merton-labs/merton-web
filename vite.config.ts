@@ -1,7 +1,14 @@
 import tailwindcss from '@tailwindcss/vite';
-import adapter from '@sveltejs/adapter-node';
+import nodeAdapter from '@sveltejs/adapter-node';
+import staticAdapter from '@sveltejs/adapter-static';
 import { sveltekit } from '@sveltejs/kit/vite';
 import { defineConfig, loadEnv } from 'vite';
+
+// `vite build` makes the Node server used by the Docker image. `--mode cloudflare`
+// makes a static SPA (pages render on the client anyway) for Cloudflare Workers,
+// where cloudflare/worker.js forwards /api to merton-api and serves the files.
+const adapter = (mode: string) =>
+	mode === 'cloudflare' ? staticAdapter({ fallback: 'index.html' }) : nodeAdapter();
 
 export default defineConfig(({ mode }) => ({
 	plugins: [
@@ -12,7 +19,7 @@ export default defineConfig(({ mode }) => ({
 				runes: ({ filename }) =>
 					filename.split(/[/\\]/).includes('node_modules') ? undefined : true
 			},
-			adapter: adapter()
+			adapter: adapter(mode)
 		})
 	],
 	server: {

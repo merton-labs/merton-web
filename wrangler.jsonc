@@ -1,0 +1,19 @@
+// Cloudflare Workers deployment: `bun run deploy:cloudflare`, or Workers Builds
+// with build command `bun run build:cloudflare` and deploy command
+// `npx wrangler@4 deploy`. See README, "Deploying to Cloudflare Workers".
+{
+	"name": "merton-web",
+	"main": "cloudflare/worker.js",
+	"compatibility_date": "2026-10-01",
+	"assets": {
+		"directory": "build",
+		"binding": "ASSETS",
+		// Client-side routes such as /portfolios/123 get index.html.
+		"not_found_handling": "single-page-application",
+		// Only /api/* runs the Worker; every other path is served as a file.
+		"run_worker_first": ["/api/*"]
+	},
+	// API_ORIGIN is set in the dashboard (or `wrangler secret put`); keep it on deploy.
+	"keep_vars": true,
+	"observability": { "enabled": true }
+}

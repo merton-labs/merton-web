@@ -14,6 +14,10 @@ All notable changes to merton-web are recorded here. The format follows
   class or currency; a table by holding; and "Dividend growth" (each month,
   one bar per year, for the last three years). Payments without an FX rate
   are listed. Needs the merton-api `dividends` endpoint.
+- Cloudflare Workers deployment: `bun run build:cloudflare` makes a static SPA
+  with `adapter-static`, and `cloudflare/worker.js` with `wrangler.jsonc`
+  serves it and forwards `/api/*` to merton-api at `API_ORIGIN` on the same
+  origin. The Node build for Docker is unchanged.
 
 ### Changed
 

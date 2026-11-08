@@ -9,7 +9,8 @@ multi-user investment portfolio tracker. The REST backend is
 
 ## Stack
 
-- SvelteKit (Svelte 5 runes, TypeScript), `adapter-node` on Node 24
+- SvelteKit (Svelte 5 runes, TypeScript), `adapter-node` on Node 24; `adapter-static`
+  for Cloudflare Workers
 - [Bun](https://bun.sh) as the package manager (`bun.lock`); scripts still run on Node
 - Tailwind CSS v4
 - [shadcn-svelte](https://shadcn-svelte.com) components (neutral theme) on bits-ui
@@ -99,6 +100,42 @@ The script checks `GET /` (HTML), `GET /api/v1/health`, and
 `GET /api/v1/openapi.json`, then runs an end-to-end authentication and CSRF
 round-trip (`register` → `login` → `csrf` → `me` → `logout`) through the
 reverse proxy.
+
+## Deploying to Cloudflare Workers
+
+The app can also run as a Cloudflare Worker, with merton-api hosted elsewhere
+(for example Railway, Fly.io or a VPS) and the database on Neon:
+
+- `bun run build:cloudflare` (`vite build --mode cloudflare`) uses
+  `adapter-static` and writes a static SPA to `build/`, with `index.html` as
+  the fallback for client-side routes. Plain `bun run build` still makes the
+  Node server for the Docker image.
+- `cloudflare/worker.js` takes the reverse proxy's place: `/api/*` is forwarded
+  to `API_ORIGIN`, and every other path is a file from `build/`. The browser
+  sees a single origin, so the session cookie and CSRF Origin check work as
+  they do behind Caddy, without CORS.
+- `wrangler.jsonc` configures the Worker; `keep_vars` keeps variables set in
+  the dashboard across deploys.
+
+To deploy:
+
+1. Deploy merton-api and note its public URL. Set its
+   `APP_TRUSTED_ORIGINS` to the Worker's URL (for example
+   `https://merton-web.<account>.workers.dev`, or a custom domain).
+2. Deploy the Worker, either with `bun run deploy:cloudflare` (runs
+   `wrangler login` the first time) or by connecting this repository in
+   Workers Builds with build command `bun run build:cloudflare` and deploy
+   command `npx wrangler@4 deploy`.
+3. In the Worker's Settings → Variables, set `API_ORIGIN` to merton-api's URL
+   (for example `https://merton-api.up.railway.app`, with no trailing path).
+   Until it is set, `/api/*` answers `503`.
+
+Then run the smoke test against the Worker:
+`BASE_URL=https://merton-web.<account>.workers.dev ./scripts/smoke.sh`.
+
+Known limit: merton-api sees the Worker's and the host's proxy addresses, not
+the browser's, and `TRUSTED_PROXIES` accepts exact IPs only. Its per-IP login
+and registration limit (20 per 15 minutes) is therefore shared by all users.
 
 ## Checks and CI
 
